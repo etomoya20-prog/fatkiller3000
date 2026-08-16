@@ -40,6 +40,9 @@ fi
 if [ ! -d "$SRV_DIR/.git" ]; then
   echo "==> первый деплой: инициализирую репозиторий в $SRV_DIR"
   mkdir -p "$SRV_DIR"
+  # Файлы могли приехать сюда с чужим uid (например, через rsync с ноутбука) —
+  # git на такой каталог ругается «dubious ownership» и отказывается работать.
+  chown -R "$(id -u):$(id -g)" "$SRV_DIR"
   cd "$SRV_DIR"
   git init -q
   git remote add origin "$REPO_SSH"
