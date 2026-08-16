@@ -49,7 +49,8 @@ if [ ! -d "$SRV_DIR/.git" ]; then
 fi
 
 cd "$SRV_DIR"
-git remote set-url origin "$REPO_SSH"
+# Идемпотентно: каталог мог остаться после прерванного деплоя — с .git, но без remote.
+git remote set-url origin "$REPO_SSH" 2>/dev/null || git remote add origin "$REPO_SSH"
 git fetch --all --prune
 git remote set-head origin -a >/dev/null 2>&1 || true
 
