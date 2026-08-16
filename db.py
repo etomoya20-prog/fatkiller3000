@@ -276,11 +276,19 @@ async def weekly_stats(
 ) -> list[asyncpg.Record]:
     """По каждому участнику группы за период [start, end]:
     сколько дней уложился в коридор нормы, сколько дней вообще не отчитался,
-    и среднее по калориям за дни с данными."""
+    и среднее по калориям за дни с данными.
+
+    Отсчёт ведётся не с начала недели, а со дня вступления в группу, если человек
+    пришёл позже: иначе новичок в первой же сводке выглядит прогульщиком за дни,
+    когда его тут не было. Сколько дней реально зачтено — в tracked_days."""
     return await pool().fetch(
         """
         WITH members AS (
-            SELECT u.tg_id, u.full_name, u.username, u.kcal_norm
+            SELECT u.tg_id, u.full_name, u.username, u.kcal_norm,
+                   GREATEST(
+                       $2::date,
+                       (gm.joined_at AT TIME ZONE 'Europe/Moscow')::date
+                   ) AS from_date
               FROM group_members gm
               JOIN users u ON u.tg_id = gm.tg_id
              WHERE gm.chat_id = $1
@@ -291,7 +299,7 @@ async def weekly_stats(
         days AS (
             SELECT m.tg_id, d::date AS log_date
               FROM members m
-              CROSS JOIN generate_series($2::date, $3::date, interval '1 day') AS d
+              CROSS JOIN LATERAL generate_series(m.from_date, $3::date, interval '1 day') AS d
         ),
         totals AS (
             SELECT d.tg_id,
@@ -305,6 +313,7 @@ async def weekly_stats(
                m.full_name,
                m.username,
                m.kcal_norm,
+               COUNT(*)                                                     AS tracked_days,
                COUNT(*) FILTER (WHERE t.kcal IS NULL)                       AS missed_days,
                COUNT(*) FILTER (
                    WHERE t.kcal IS NOT NULL

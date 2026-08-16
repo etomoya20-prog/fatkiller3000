@@ -69,41 +69,56 @@ def _medal(index: int) -> str:
 
 def build_summary(rows, start: dt.date, end: dt.date, total_days: int) -> str:
     """Собирает текст недельной сводки."""
+    # Блоки склеиваются через "\n\n", поэтому свои переводы строк на концах не ставим.
     header = (
         f"📊 <b>Итоги недели</b>\n"
-        f"<i>{start.strftime('%d.%m')} — {end.strftime('%d.%m')}</i>\n\n"
+        f"<i>{start.strftime('%d.%m')} — {end.strftime('%d.%m')}</i>"
     )
 
     if not rows:
-        return header + "За эту неделю данных нет. Заполните анкету у бота в личке — /start"
+        return header + "\n\nЗа эту неделю данных нет. Заполните анкету у бота в личке — /start"
 
     lines = [header]
+    has_newcomers = False
     for index, row in enumerate(rows):
         on_track = row["on_track_days"]
         missed = row["missed_days"]
         avg = row["avg_kcal"]
+        # У вступивших среди недели знаменатель меньше: считаем со дня вступления.
+        tracked = row["tracked_days"]
+        if tracked < total_days:
+            has_newcomers = True
 
         parts = [f"{_medal(index)} {_display_name(row)}"]
-        parts.append(f"    В норме: <b>{on_track}</b> из {total_days} дн.")
+        suffix = " <i>(с момента вступления)</i>" if tracked < total_days else ""
+        parts.append(f"    В норме: <b>{on_track}</b> из {tracked} дн.{suffix}")
         if avg is not None:
             parts.append(f"    Средние калории: {int(avg)} при норме {row['kcal_norm']}")
         if missed:
             parts.append(f"    ⚠️ Не отчитался: <b>{missed}</b> дн.")
         lines.append("\n".join(parts))
 
-    perfect = [r for r in rows if r["missed_days"] == 0 and r["on_track_days"] == total_days]
+    perfect = [
+        r for r in rows
+        if r["missed_days"] == 0
+        and r["tracked_days"] == total_days
+        and r["on_track_days"] == total_days
+    ]
     if perfect:
         names = ", ".join(r["full_name"] or "участник" for r in perfect)
-        lines.append(f"\n🏆 Идеальная неделя: {names}. Так держать!")
+        lines.append(f"🏆 Идеальная неделя: {names}. Так держать!")
 
     silent = [r for r in rows if r["reported_days"] == 0]
     if silent:
         lines.append(
-            f"\n😴 Всю неделю молчали: {len(silent)} чел. "
+            f"😴 Всю неделю молчали: {len(silent)} чел. "
             f"Ребята, без данных я не могу помочь."
         )
 
-    lines.append("\n<i>День засчитан, если калории уложились в ±10% от нормы.</i>")
+    footer = "<i>День засчитан, если калории уложились в ±10% от нормы."
+    if has_newcomers:
+        footer += " У недавно вступивших счёт идёт со дня прихода в группу."
+    lines.append(footer + "</i>")
     return "\n\n".join(lines)
 
 
