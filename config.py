@@ -42,8 +42,8 @@ class Config:
     summary_minute: int
     # Насколько можно отклониться от нормы, чтобы день всё ещё считался соблюдённым.
     tolerance: float
-    # Явный чат для сводки; если не задан — берём все группы, где бот состоит.
-    group_chat_id: int | None
+    # Белый список чатов для сводки. Пустой — шлём во все группы, где бот состоит.
+    group_chat_ids: list[int]
 
 
 def load_config() -> Config:
@@ -53,7 +53,9 @@ def load_config() -> Config:
     db_host = os.getenv("DB_HOST", "host.docker.internal")
     db_port = os.getenv("DB_PORT", "5432")
 
-    raw_chat_id = os.getenv("GROUP_CHAT_ID", "").strip()
+    # Допускаем несколько ID через запятую: бот может работать в нескольких группах.
+    raw_chat_ids = os.getenv("GROUP_CHAT_ID", "").replace(" ", "")
+    group_chat_ids = [int(x) for x in raw_chat_ids.split(",") if x]
 
     return Config(
         bot_token=_required("BOT_TOKEN"),
@@ -66,5 +68,5 @@ def load_config() -> Config:
         summary_hour=int(os.getenv("SUMMARY_HOUR", "20")),
         summary_minute=int(os.getenv("SUMMARY_MINUTE", "0")),
         tolerance=float(os.getenv("TOLERANCE", "0.10")),
-        group_chat_id=int(raw_chat_id) if raw_chat_id else None,
+        group_chat_ids=group_chat_ids,
     )

@@ -29,13 +29,21 @@ CREATE TABLE IF NOT EXISTS chats (
 );
 
 -- Кто в какой группе состоит: сводка строится только по участникам группы.
+-- Один человек может состоять сразу в нескольких группах — профиль и дневник
+-- у него при этом общие, различается только то, в чью сводку он попадает.
 CREATE TABLE IF NOT EXISTS group_members (
-    chat_id   BIGINT      NOT NULL,
-    tg_id     BIGINT      NOT NULL,
-    joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    left_at   TIMESTAMPTZ,
+    chat_id    BIGINT      NOT NULL,
+    tg_id      BIGINT      NOT NULL,
+    joined_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    left_at    TIMESTAMPTZ,
+    -- Когда мы поздоровались с человеком в этом чате. Нужно, чтобы не поприветствовать
+    -- дважды: о вступлении Telegram сообщает и апдейтом chat_member, и сервисным
+    -- сообщением, и оба приходят, когда бот администратор.
+    greeted_at TIMESTAMPTZ,
     PRIMARY KEY (chat_id, tg_id)
 );
+
+ALTER TABLE group_members ADD COLUMN IF NOT EXISTS greeted_at TIMESTAMPTZ;
 
 -- Каждое распознанное сообщение о еде — отдельная запись.
 -- Дневной итог считается суммой записей за дату (см. is_full_day в intake.py).

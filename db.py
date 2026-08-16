@@ -135,6 +135,42 @@ async def remove_group_member(chat_id: int, tg_id: int) -> None:
     )
 
 
+async def claim_greeting(chat_id: int, tg_id: int) -> bool:
+    """Резервирует право поприветствовать человека в этом чате.
+
+    О вступлении Telegram сообщает дважды — апдейтом chat_member и сервисным
+    сообщением, — поэтому обработчики гонятся за одно и то же приветствие.
+    Побеждает тот, чей UPDATE вернул строку; остальные получают False.
+    Час — окно, после которого повторный вход считается новым событием.
+    """
+    row = await pool().fetchrow(
+        """
+        UPDATE group_members
+           SET greeted_at = now()
+         WHERE chat_id = $1
+           AND tg_id = $2
+           AND (greeted_at IS NULL OR greeted_at < now() - interval '1 hour')
+        RETURNING tg_id
+        """,
+        chat_id, tg_id,
+    )
+    return row is not None
+
+
+async def is_in_any_group(tg_id: int) -> bool:
+    row = await pool().fetchrow(
+        """
+        SELECT 1
+          FROM group_members gm
+          JOIN chats c ON c.chat_id = gm.chat_id
+         WHERE gm.tg_id = $1 AND gm.left_at IS NULL AND c.is_active
+         LIMIT 1
+        """,
+        tg_id,
+    )
+    return row is not None
+
+
 # --------------------------------------------------------------------------
 # Записи о еде
 # --------------------------------------------------------------------------
@@ -197,13 +233,21 @@ async def clear_day(tg_id: int, log_date: dt.date) -> int:
 
 async def users_without_entry(log_date: dt.date) -> list[asyncpg.Record]:
     """Прошедшие анкету активные пользователи, от которых за дату нет ни одной записи
-    и которым сегодня ещё не напоминали."""
+    и которым сегодня ещё не напоминали.
+
+    Напоминание — одно на человека в день, даже если он состоит в нескольких
+    группах: дневник у него общий. Вышедшим из всех групп не пишем."""
     return await pool().fetch(
         """
         SELECT u.tg_id, u.full_name
           FROM users u
          WHERE u.is_active
            AND u.onboarded_at IS NOT NULL
+           AND EXISTS (SELECT 1 FROM group_members gm
+                         JOIN chats c ON c.chat_id = gm.chat_id
+                        WHERE gm.tg_id = u.tg_id
+                          AND gm.left_at IS NULL
+                          AND c.is_active)
            AND NOT EXISTS (SELECT 1 FROM entries e
                             WHERE e.tg_id = u.tg_id AND e.log_date = $1)
            AND NOT EXISTS (SELECT 1 FROM reminders r

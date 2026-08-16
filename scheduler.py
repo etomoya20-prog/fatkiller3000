@@ -113,10 +113,11 @@ async def send_weekly_summary(bot: Bot, cfg: Config) -> None:
     start = end - dt.timedelta(days=6)
     total_days = 7
 
-    chat_ids = [cfg.group_chat_id] if cfg.group_chat_id else await db.active_chats()
+    chat_ids = cfg.group_chat_ids or await db.active_chats()
     if not chat_ids:
         log.warning("Нет групп для сводки — бот ещё ни в одну не добавлен")
         return
+    log.info("Рассылаю сводку в %d групп(ы)", len(chat_ids))
 
     for chat_id in chat_ids:
         rows = await db.weekly_stats(chat_id, start, end, cfg.tolerance)

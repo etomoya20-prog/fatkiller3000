@@ -41,33 +41,46 @@ def _mention(user) -> str:
     return hlink(user.full_name, f"tg://user?id={user.id}")
 
 
-@router.chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> IS_MEMBER))
-async def on_user_joined(event: ChatMemberUpdated, bot: Bot) -> None:
-    """Новый человек в группе — здороваемся и зовём в личку заполнять анкету."""
-    user = event.new_chat_member.user
-    if user.is_bot:
-        return
+async def _greet_newcomer(bot: Bot, chat, user) -> None:
+    """Регистрирует человека в группе и здоровается — ровно один раз на вступление.
 
-    await db.upsert_chat(event.chat.id, event.chat.title)
+    Вызывается из двух мест: апдейта chat_member и сервисного сообщения о входе.
+    Когда бот администратор, Telegram присылает оба, поэтому право на приветствие
+    разыгрывается в БД.
+    """
+    await db.upsert_chat(chat.id, chat.title)
     await db.upsert_user(user.id, user.username, user.full_name)
-    await db.add_group_member(event.chat.id, user.id)
+    await db.add_group_member(chat.id, user.id)
+
+    if not await db.claim_greeting(chat.id, user.id):
+        return
 
     profile = await db.get_user(user.id)
     if profile and profile["onboarded_at"]:
+        # Человек уже вёл дневник в другой группе — анкету заново не гоняем.
         await bot.send_message(
-            event.chat.id,
+            chat.id,
             f"{_mention(user)} снова с нами. Анкета уже заполнена, "
             f"норма на месте — продолжаем отчитываться в личке.",
         )
         return
 
     await bot.send_message(
-        event.chat.id,
+        chat.id,
         f"{_mention(user)}, привет и добро пожаловать!\n\n"
         f"Чтобы я считал твои калории, напиши мне в личку команду /start — "
         f"задам шесть вопросов и рассчитаю дневную норму.",
-        reply_markup=await _invite_keyboard(bot, event.chat.id),
+        reply_markup=await _invite_keyboard(bot, chat.id),
     )
+
+
+@router.chat_member(ChatMemberUpdatedFilter(IS_NOT_MEMBER >> IS_MEMBER))
+async def on_user_joined(event: ChatMemberUpdated, bot: Bot) -> None:
+    """Новый человек в группе — здороваемся и зовём в личку заполнять анкету."""
+    user = event.new_chat_member.user
+    if user.is_bot:
+        return
+    await _greet_newcomer(bot, event.chat, user)
 
 
 @router.chat_member(ChatMemberUpdatedFilter(IS_MEMBER >> IS_NOT_MEMBER))
@@ -107,23 +120,10 @@ async def on_bot_status_changed(event: ChatMemberUpdated, bot: Bot) -> None:
 async def on_new_chat_members_fallback(message: Message, bot: Bot) -> None:
     """Запасной путь: сервисное сообщение о входе приходит и без прав администратора
     на chat_member-апдейты."""
-    await db.upsert_chat(message.chat.id, message.chat.title)
     for user in message.new_chat_members:
         if user.is_bot:
             continue
-        await db.upsert_user(user.id, user.username, user.full_name)
-        await db.add_group_member(message.chat.id, user.id)
-
-        profile = await db.get_user(user.id)
-        if profile and profile["onboarded_at"]:
-            continue
-
-        await message.answer(
-            f"{_mention(user)}, привет и добро пожаловать!\n\n"
-            f"Чтобы я считал твои калории, напиши мне в личку команду /start — "
-            f"задам шесть вопросов и рассчитаю дневную норму.",
-            reply_markup=await _invite_keyboard(bot, message.chat.id),
-        )
+        await _greet_newcomer(bot, message.chat, user)
 
 
 @router.message(F.left_chat_member)
