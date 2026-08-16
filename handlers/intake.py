@@ -84,21 +84,28 @@ async def _save_and_reply(message: Message, profile: dict, report: llm.FoodRepor
         return
 
     log_date = today_msk()
+    protein_g, fat_g, carb_g = report.macros
     await db.add_entry(
         tg_id=message.from_user.id,
         log_date=log_date,
         kcal=report.kcal,
-        protein_g=report.protein_g,
-        fat_g=report.fat_g,
-        carb_g=report.carb_g,
+        protein_g=protein_g,
+        fat_g=fat_g,
+        carb_g=carb_g,
         is_full_day=report.is_full_day,
         source=source,
         raw_input=(raw_input or "")[:4000] or None,
-        llm_note=report.comment,
+        llm_note=(report.note or report.comment) or None,
     )
 
     totals = await db.day_totals(message.from_user.id, log_date)
-    await message.answer(_day_report(profile, totals, report.comment))
+    # note объясняет, откуда взялась цифра, — это важнее вежливого comment,
+    # потому что именно по нему человек заметит, что данные прочитаны не так.
+    footnote = report.note or report.comment
+    if report.note:
+        # Цифру не прочли напрямую, а вывели — покажем путь к исправлению.
+        footnote += "\nЕсли это не так — /reset и пришли данные заново."
+    await message.answer(_day_report(profile, totals, footnote))
 
 
 def _day_report(profile: dict, totals, comment: str | None = None) -> str:
