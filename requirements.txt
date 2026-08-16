@@ -1,7 +1,9 @@
+# Верхние границы стоят намеренно: пересборка образа не должна внезапно
+# затянуть мажорную версию с несовместимым API.
 aiogram>=3.13,<4
-asyncpg>=0.29
+asyncpg>=0.29,<1
 APScheduler>=3.10,<4
-openai>=1.50
-python-dotenv>=1.0
-openpyxl>=3.1
-pypdf>=4.0
+openai>=1.50,<4
+python-dotenv>=1.0,<2
+openpyxl>=3.1,<4
+pypdf>=4.0,<7
