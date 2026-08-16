@@ -34,20 +34,41 @@ if ! ssh-keygen -F github.com >/dev/null; then
   ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
 fi
 
+# Репозиторий поднимаем НА МЕСТЕ, а не через clone в чистый каталог: в $SRV_DIR
+# лежит .env с секретами, он не под git, и снести каталог значит потерять его.
+# git reset --hard игнорируемые файлы не трогает, поэтому .env переживает деплой.
 if [ ! -d "$SRV_DIR/.git" ]; then
+  echo "==> первый деплой: инициализирую репозиторий в $SRV_DIR"
   mkdir -p "$SRV_DIR"
-  git clone "$REPO_SSH" "$SRV_DIR"
-else
   cd "$SRV_DIR"
-  git fetch --all --prune
-  TARGET_BRANCH="$(git symbolic-ref --short -q refs/remotes/origin/HEAD | sed 's|^origin/||' || echo main)"
-  git reset --hard "origin/${TARGET_BRANCH}"
+  git init -q
+  git remote add origin "$REPO_SSH"
 fi
 
 cd "$SRV_DIR"
+git remote set-url origin "$REPO_SSH"
+git fetch --all --prune
+git remote set-head origin -a >/dev/null 2>&1 || true
+
+TARGET_BRANCH="$(git symbolic-ref --short -q refs/remotes/origin/HEAD | sed 's|^origin/||' || true)"
+[ -n "$TARGET_BRANCH" ] || TARGET_BRANCH=main
+echo "==> подтягиваю origin/${TARGET_BRANCH}"
+git reset --hard "origin/${TARGET_BRANCH}"
 
 if [ ! -f .env ]; then
   echo "ОШИБКА: нет $SRV_DIR/.env — скопируйте .env.example и заполните" >&2
+  exit 1
+fi
+
+# Пустой обязательный ключ уронит контейнер в цикл перезапусков уже после сборки —
+# дешевле остановиться здесь.
+MISSING=""
+for KEY in BOT_TOKEN OPENAI_API_KEY DB_PASSWORD; do
+  VALUE="$(grep -E "^${KEY}=" .env | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+  [ -n "$VALUE" ] || MISSING="$MISSING $KEY"
+done
+if [ -n "$MISSING" ]; then
+  echo "ОШИБКА: в $SRV_DIR/.env не заполнено:$MISSING" >&2
   exit 1
 fi
 
