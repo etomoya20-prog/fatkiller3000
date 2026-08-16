@@ -140,8 +140,32 @@ async def cmd_join(message: Message, bot: Bot) -> None:
     await db.upsert_chat(message.chat.id, message.chat.title)
     await db.upsert_user(user.id, user.username, user.full_name)
     await db.add_group_member(message.chat.id, user.id)
+
+    profile = await db.get_user(user.id)
+    if profile and profile["onboarded_at"]:
+        await message.answer(f"{_mention(user)}, записал тебя в участники. Анкета уже заполнена.")
+        return
+
     await message.answer(
         f"{_mention(user)}, записал тебя в участники. "
         f"Теперь напиши мне в личку /start, чтобы заполнить анкету.",
         reply_markup=await _invite_keyboard(bot, message.chat.id),
     )
+
+
+@router.message()
+async def track_existing_member(message: Message) -> None:
+    """Молча записывает автора сообщения в состав группы.
+
+    О тех, кто состоял в группе до появления бота, Telegram задним числом не
+    рассказывает и список участников выдать не даёт — единственный способ их
+    узнать это увидеть их сообщение. Поэтому мы тихо отмечаем каждого пишущего:
+    иначе старожилы не попадут ни в сводку, ни в напоминания, и им пришлось бы
+    вручную звать /join. Ничего не отвечаем — это фоновая работа.
+    """
+    user = message.from_user
+    if not user or user.is_bot:
+        return
+    await db.upsert_chat(message.chat.id, message.chat.title)
+    await db.remember_user(user.id, user.username, user.full_name)
+    await db.add_group_member(message.chat.id, user.id)

@@ -260,8 +260,21 @@ async def got_activity(callback: CallbackQuery, state: FSMContext) -> None:
         f"файлом-выгрузкой из приложения или скриншотом дневника. Разберусь в любом формате.\n"
         f"Если до 21:00 по Москве от тебя ничего не будет — напомню.\n\n"
         f"Команды: /today — итог дня, /profile — норма, /reset — стереть сегодняшний день."
+        + await _no_group_warning(callback.from_user.id)
     )
     await callback.answer("Норма рассчитана")
+
+
+async def _no_group_warning(tg_id: int) -> str:
+    """Человек, не привязанный ни к одной группе, выпадает и из сводки, и из
+    напоминаний — молчать об этом нельзя, он решит, что бот сломался."""
+    if await db.is_in_any_group(tg_id):
+        return ""
+    return (
+        "\n\n⚠️ Я пока не вижу тебя ни в одной группе. Значит, ты не попадёшь "
+        "в общую сводку и не будешь получать напоминания. Напиши в групповом чате "
+        "<code>/join</code> или просто что-нибудь — и я тебя запишу."
+    )
 
 
 @router.message(Command("profile"))
@@ -270,7 +283,11 @@ async def cmd_profile(message: Message) -> None:
     if not profile or not profile["onboarded_at"]:
         await message.answer("Анкета ещё не заполнена. Начнём? Жми /start")
         return
-    await message.answer(format_profile(dict(profile)) + "\n\nПересчитать: /again")
+    await message.answer(
+        format_profile(dict(profile))
+        + "\n\nПересчитать: /again"
+        + await _no_group_warning(message.from_user.id)
+    )
 
 
 @router.message(Command("help"))

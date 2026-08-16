@@ -54,6 +54,25 @@ async def upsert_user(tg_id: int, username: str | None, full_name: str | None) -
     )
 
 
+async def remember_user(tg_id: int, username: str | None, full_name: str | None) -> None:
+    """Запоминает человека, не трогая is_active.
+
+    Отличается от upsert_user тем, что не воскрешает заблокировавших бота:
+    писать в группу может и тот, кто закрыл личку, — это не повод писать ему снова.
+    """
+    await pool().execute(
+        """
+        INSERT INTO users (tg_id, username, full_name)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (tg_id) DO UPDATE
+            SET username   = EXCLUDED.username,
+                full_name  = EXCLUDED.full_name,
+                updated_at = now()
+        """,
+        tg_id, username, full_name,
+    )
+
+
 async def get_user(tg_id: int) -> asyncpg.Record | None:
     return await pool().fetchrow("SELECT * FROM users WHERE tg_id = $1", tg_id)
 
@@ -117,12 +136,22 @@ async def active_chats() -> list[int]:
 
 
 async def add_group_member(chat_id: int, tg_id: int) -> None:
+    """Регистрирует участие в группе.
+
+    Дата вступления сдвигается только при возвращении после выхода. Для уже
+    состоящего участника она остаётся прежней: функция вызывается в том числе
+    на каждое его сообщение в чате, а сброс даты обнулял бы недельную статистику.
+    """
     await pool().execute(
         """
         INSERT INTO group_members (chat_id, tg_id)
         VALUES ($1, $2)
         ON CONFLICT (chat_id, tg_id) DO UPDATE
-            SET left_at = NULL, joined_at = now()
+            SET left_at   = NULL,
+                joined_at = CASE
+                                WHEN group_members.left_at IS NOT NULL THEN now()
+                                ELSE group_members.joined_at
+                            END
         """,
         chat_id, tg_id,
     )
