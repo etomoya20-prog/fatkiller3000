@@ -1,0 +1,15 @@
+# IDE и окружение
+.idea/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.log
+.DS_Store
+
+# Секреты
+.env
+.claude/settings.local.json
+
+# Локальные данные
+data/
