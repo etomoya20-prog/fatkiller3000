@@ -65,6 +65,16 @@ CREATE TABLE IF NOT EXISTS entries (
 CREATE INDEX IF NOT EXISTS entries_tg_date_idx ON entries (tg_id, log_date);
 CREATE INDEX IF NOT EXISTS entries_date_idx ON entries (log_date);
 
+-- Полное предупреждение про оценку по фото — один раз в сутки на человека.
+-- Дальше в тот же день хватает короткой строчки в самом отчёте: лекцию про
+-- трекеры на каждое фото читать никто не станет.
+CREATE TABLE IF NOT EXISTS photo_hints (
+    tg_id     BIGINT      NOT NULL,
+    hint_date DATE        NOT NULL,
+    sent_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tg_id, hint_date)
+);
+
 -- Защита от повторной отправки напоминания в тот же день.
 CREATE TABLE IF NOT EXISTS reminders (
     tg_id       BIGINT      NOT NULL,

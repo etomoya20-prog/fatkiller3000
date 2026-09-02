@@ -378,6 +378,24 @@ async def weekly_stats(
         """,
         chat_id, start, end, tolerance,
     )
+async def claim_photo_hint(tg_id: int, hint_date: dt.date) -> bool:
+    """Резервирует право показать сегодня полное предупреждение про фото.
+
+    Первый за день вызов возвращает True, остальные False. Как и в
+    claim_greeting, победитель определяется вставкой, а не проверкой перед
+    ней: два фото подряд легко обрабатываются одновременно.
+    """
+    row = await pool().fetchrow(
+        """
+        INSERT INTO photo_hints (tg_id, hint_date) VALUES ($1, $2)
+        ON CONFLICT DO NOTHING
+        RETURNING tg_id
+        """,
+        tg_id, hint_date,
+    )
+    return row is not None
+
+
 # --------------------------------------------------------------------------
 # Выгрузка в Google Sheets
 # --------------------------------------------------------------------------

@@ -28,6 +28,10 @@ MAX_FILE_BYTES = 15 * 1024 * 1024
 # штрихкодов, то есть пригодные для ежедневного учёта без мучений.
 TRACKERS = "FatSecret, MyFitnessPal или YAZIO"
 
+# Напоминание для второго и последующих фото за день: полный текст человек
+# сегодня уже прочитал, а совсем молчать нельзя — цифры-то всё равно неточные.
+PHOTO_ESTIMATE_SHORT = "⚠️ Снова прикидка по фото — точнее будет из трекера."
+
 
 def today_msk() -> dt.date:
     return dt.datetime.now(MSK).date()
@@ -124,9 +128,11 @@ async def _save_and_reply(message: Message, profile: dict, report: llm.FoodRepor
     )
 
     totals = await db.day_totals(message.from_user.id, log_date)
-    # Про оценку по фото человек через секунду прочитает отдельное и куда более
-    # внятное предупреждение — вежливое «это прикидка» в подписи только дублирует.
+    # Про оценку по фото бот скажет сам — своими словами и внятнее, чем модель,
+    # поэтому вежливое «это прикидка» из comment здесь только дублировало бы.
     photo_estimate = report.estimated_from_photo and source == "photo"
+    # Право на полный текст разыгрывается в БД и достаётся первому фото за день.
+    full_hint = photo_estimate and await db.claim_photo_hint(message.from_user.id, log_date)
 
     # note объясняет, откуда взялась цифра, — это важнее вежливого comment,
     # потому что именно по нему человек заметит, что данные прочитаны не так.
@@ -134,11 +140,14 @@ async def _save_and_reply(message: Message, profile: dict, report: llm.FoodRepor
     if report.note:
         # Цифру не прочли напрямую, а вывели — покажем путь к исправлению.
         footnote += "\nЕсли это не так — /reset и пришли данные заново."
+    if photo_estimate and not full_hint:
+        # Лекцию про трекеры сегодня уже показали — хватит одной строки в отчёте.
+        footnote = "\n".join(part for part in (footnote, PHOTO_ESTIMATE_SHORT) if part)
     await message.answer(_day_report(profile, totals, footnote))
 
     # Отдельным сообщением, а не припиской к итогу: предупреждение длинное и в
     # хвосте отчёта его дочитывают через раз.
-    if photo_estimate:
+    if full_hint:
         await message.answer(
             _photo_estimate_warning(guide_url), disable_web_page_preview=True
         )
