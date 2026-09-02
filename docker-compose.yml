@@ -15,6 +15,12 @@ services:
     env_file:
       - .env
 
+    # Ключ сервисного аккаунта Google лежит рядом с .env, вне git, и монтируется
+    # только на чтение — в образ секретам попадать незачем. Каталог создаёт
+    # deploy.sh; без выгрузки он просто пустой.
+    volumes:
+      - ./secrets:/app/secrets:ro
+
     environment:
       PYTHONUNBUFFERED: "1"
       TZ: "Europe/Moscow"

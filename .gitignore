@@ -9,6 +9,7 @@ __pycache__/
 
 # Секреты
 .env
+secrets/
 .claude/settings.local.json
 
 # Локальные данные

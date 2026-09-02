@@ -76,6 +76,18 @@ if [ -n "$MISSING" ]; then
   exit 1
 fi
 
+# Каталог с ключом сервисного аккаунта Google под git не ходит, а compose
+# монтирует его томом. Создаём заранее, чтобы docker не сделал это за нас
+# от root — тогда положить туда ключ было бы нечем.
+mkdir -p secrets
+chmod 700 secrets
+
+if [ -n "$(grep -E '^GOOGLE_SHEET_ID=' .env | cut -d= -f2- | tr -d '[:space:]')" ] \
+   && [ ! -f secrets/google-service-account.json ]; then
+  echo "ВНИМАНИЕ: GOOGLE_SHEET_ID задан, но нет secrets/google-service-account.json" >&2
+  echo "          выгрузка в таблицу останется выключенной" >&2
+fi
+
 echo "==> docker compose build --pull"
 docker compose build --pull
 

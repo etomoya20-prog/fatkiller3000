@@ -16,6 +16,7 @@ from aiogram.types import BotCommand, Message
 import db
 import llm
 import scheduler as scheduler_module
+import sheets
 from config import Config, load_config
 from handlers import group, intake, onboarding
 
@@ -58,6 +59,26 @@ async def force_nudge(message: Message, bot: Bot, cfg: Config) -> None:
     await message.answer("Перекличка по анкетам отправлена.")
 
 
+@admin_router.message(Command("export"))
+async def force_export(message: Message) -> None:
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    if not sheets.enabled():
+        await message.answer(
+            "Выгрузка не настроена: нет GOOGLE_SHEET_ID или ключа сервисного аккаунта."
+        )
+        return
+
+    await message.answer("Обновляю таблицу…")
+    try:
+        url = await sheets.export()
+    except Exception as exc:
+        log.exception("Ручная выгрузка не удалась")
+        await message.answer(f"Не получилось: {exc}")
+        return
+    await message.answer(f"Готово: {url}")
+
+
 @admin_router.message(Command("chatid"))
 async def chat_id(message: Message) -> None:
     if message.from_user.id not in ADMIN_IDS:
@@ -81,6 +102,7 @@ async def main() -> None:
 
     await db.init(cfg.db_dsn)
     llm.init(cfg.openai_api_key, cfg.openai_model)
+    sheets.init(cfg.google_credentials_file, cfg.google_sheet_id, cfg.tolerance)
 
     bot = Bot(
         token=cfg.bot_token,

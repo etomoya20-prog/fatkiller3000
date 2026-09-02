@@ -378,3 +378,82 @@ async def weekly_stats(
         """,
         chat_id, start, end, tolerance,
     )
+# --------------------------------------------------------------------------
+# Выгрузка в Google Sheets
+# --------------------------------------------------------------------------
+
+async def export_participants() -> list[asyncpg.Record]:
+    """Анкеты всех, кто сейчас состоит в живой группе — включая незаполнивших.
+
+    DISTINCT ON схлопывает человека, состоящего сразу в нескольких группах:
+    профиль у него один, в таблице ему нужна одна строка. Берём самое раннее
+    вступление — это его стаж в проекте.
+    """
+    return await pool().fetch(
+        """
+        SELECT DISTINCT ON (u.tg_id)
+               u.tg_id, u.full_name, u.username, u.gender, u.age, u.height_cm,
+               u.weight_kg, u.target_weight_kg, u.activity, u.kcal_norm,
+               u.protein_g, u.fat_g, u.carb_g, u.onboarded_at, u.is_active,
+               gm.joined_at
+          FROM group_members gm
+          JOIN chats c ON c.chat_id = gm.chat_id AND c.is_active
+          JOIN users u ON u.tg_id = gm.tg_id
+         WHERE gm.left_at IS NULL
+         ORDER BY u.tg_id, gm.joined_at
+        """
+    )
+
+
+async def export_diary(until: dt.date) -> list[asyncpg.Record]:
+    """Построчный дневник: по строке на каждый день каждого участника с анкетой.
+
+    Дни без записей тоже попадают в выгрузку с пустыми калориями — именно они
+    показывают пропуски. Отсчёт для человека начинается с самой ранней из дат:
+    вступление, анкета, первая запись. Иначе у тех, кого бот опознал задним
+    числом (см. add_group_member), потерялась бы уже накопленная история.
+    """
+    return await pool().fetch(
+        """
+        WITH members AS (
+            SELECT DISTINCT ON (u.tg_id)
+                   u.tg_id, u.full_name, u.username, u.kcal_norm,
+                   (gm.joined_at AT TIME ZONE 'Europe/Moscow')::date    AS joined_day,
+                   (u.onboarded_at AT TIME ZONE 'Europe/Moscow')::date  AS onboarded_day
+              FROM group_members gm
+              JOIN chats c ON c.chat_id = gm.chat_id AND c.is_active
+              JOIN users u ON u.tg_id = gm.tg_id
+             WHERE gm.left_at IS NULL
+               AND u.onboarded_at IS NOT NULL
+               AND u.kcal_norm IS NOT NULL
+             ORDER BY u.tg_id, gm.joined_at
+        ),
+        bounds AS (
+            SELECT m.*,
+                   LEAST(
+                       m.joined_day,
+                       m.onboarded_day,
+                       COALESCE((SELECT MIN(e.log_date) FROM entries e
+                                  WHERE e.tg_id = m.tg_id), m.joined_day)
+                   ) AS from_date
+              FROM members m
+        ),
+        days AS (
+            SELECT b.tg_id, b.full_name, b.username, b.kcal_norm, d::date AS log_date
+              FROM bounds b
+              CROSS JOIN LATERAL
+                   generate_series(b.from_date, $1::date, interval '1 day') AS d
+        )
+        SELECT d.log_date, d.tg_id, d.full_name, d.username, d.kcal_norm,
+               SUM(e.kcal)      AS kcal,
+               SUM(e.protein_g) AS protein_g,
+               SUM(e.fat_g)     AS fat_g,
+               SUM(e.carb_g)    AS carb_g,
+               COUNT(e.id)      AS entries
+          FROM days d
+          LEFT JOIN entries e ON e.tg_id = d.tg_id AND e.log_date = d.log_date
+         GROUP BY d.log_date, d.tg_id, d.full_name, d.username, d.kcal_norm
+         ORDER BY d.log_date, d.full_name
+        """,
+        until,
+    )

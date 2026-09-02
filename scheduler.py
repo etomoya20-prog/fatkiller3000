@@ -1,5 +1,5 @@
-"""Регулярные задачи: вечернее напоминание, ежедневная перекличка по анкетам
-и недельная сводка в группу."""
+"""Регулярные задачи: вечернее напоминание, ежедневная перекличка по анкетам,
+выгрузка в Google Sheets и недельная сводка в группу."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 import db
+import sheets
 from config import MSK, Config
 from handlers.group import invite_keyboard
 
@@ -198,6 +199,15 @@ async def send_weekly_summary(bot: Bot, cfg: Config) -> None:
         await asyncio.sleep(SEND_DELAY)
 
 
+async def run_export() -> None:
+    """Перезаливает Google-таблицу. Ошибку глушим: упавший экспорт не повод
+    ронять планировщик, а таблица догонит данные на следующем прогоне."""
+    try:
+        await sheets.export()
+    except Exception:
+        log.exception("Не удалось обновить Google-таблицу")
+
+
 def build_scheduler(bot: Bot, cfg: Config) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone=MSK)
 
@@ -221,6 +231,16 @@ def build_scheduler(bot: Bot, cfg: Config) -> AsyncIOScheduler:
         coalesce=True,
         replace_existing=True,
     )
+
+    if sheets.enabled():
+        scheduler.add_job(
+            run_export,
+            CronTrigger(hour=cfg.export_hour, minute=cfg.export_minute, timezone=MSK),
+            id="sheets_export",
+            misfire_grace_time=3600,
+            coalesce=True,
+            replace_existing=True,
+        )
 
     scheduler.add_job(
         send_weekly_summary,

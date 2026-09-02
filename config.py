@@ -43,6 +43,11 @@ class Config:
     summary_day: str
     summary_hour: int
     summary_minute: int
+    # Ежедневная выгрузка в Google Sheets. Пустые значения выключают её.
+    google_credentials_file: str
+    google_sheet_id: str
+    export_hour: int
+    export_minute: int
     # Насколько можно отклониться от нормы, чтобы день всё ещё считался соблюдённым.
     tolerance: float
     # Белый список чатов для сводки. Пустой — шлём во все группы, где бот состоит.
@@ -72,6 +77,12 @@ def load_config() -> Config:
         summary_day=os.getenv("SUMMARY_DAY", "sun"),
         summary_hour=int(os.getenv("SUMMARY_HOUR", "20")),
         summary_minute=int(os.getenv("SUMMARY_MINUTE", "0")),
+        google_credentials_file=os.getenv(
+            "GOOGLE_CREDENTIALS_FILE", "/app/secrets/google-service-account.json"
+        ),
+        google_sheet_id=os.getenv("GOOGLE_SHEET_ID", "").strip(),
+        export_hour=int(os.getenv("EXPORT_HOUR", "21")),
+        export_minute=int(os.getenv("EXPORT_MINUTE", "0")),
         tolerance=float(os.getenv("TOLERANCE", "0.10")),
         group_chat_ids=group_chat_ids,
     )
