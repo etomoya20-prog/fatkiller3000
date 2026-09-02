@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
 import logging
 from decimal import Decimal
 from pathlib import Path
@@ -44,9 +45,16 @@ def init(credentials_file: str | None, sheet_id: str | None, tolerance: float) -
         log.info("Выгрузка в Google Sheets выключена: не заданы ключ или ID таблицы")
         return
 
-    if not Path(credentials_file).is_file():
-        log.error("Ключ сервисного аккаунта не найден: %s — выгрузка выключена",
-                  credentials_file)
+    # Ключ читаем сразу и целиком: неверный путь, чужие права или битый JSON
+    # должны выключить выгрузку, а не уронить бота на старте. is_file() тут не
+    # хватает — на закрытом каталоге он сам бросает PermissionError.
+    try:
+        json.loads(Path(credentials_file).read_text(encoding="utf-8"))
+    except OSError as exc:
+        log.error("Ключ сервисного аккаунта не прочитан (%s) — выгрузка выключена", exc)
+        return
+    except ValueError as exc:
+        log.error("Ключ сервисного аккаунта не разобран (%s) — выгрузка выключена", exc)
         return
 
     _credentials_file = credentials_file

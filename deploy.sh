@@ -77,10 +77,14 @@ if [ -n "$MISSING" ]; then
 fi
 
 # Каталог с ключом сервисного аккаунта Google под git не ходит, а compose
-# монтирует его томом. Создаём заранее, чтобы docker не сделал это за нас
-# от root — тогда положить туда ключ было бы нечем.
+# монтирует его томом. Создаём заранее, чтобы docker не сделал это за нас от root.
+# Владелец — uid 1000: под ним (appuser из Dockerfile) работает контейнер, и от
+# root каталог 700 ему просто не открыть. На хосте uid 1000 не занят, так что
+# ключ остаётся закрытым для всех, кроме root и самого бота.
 mkdir -p secrets
+chown -R 1000:1000 secrets
 chmod 700 secrets
+find secrets -type f -exec chmod 600 {} +
 
 if [ -n "$(grep -E '^GOOGLE_SHEET_ID=' .env | cut -d= -f2- | tr -d '[:space:]')" ] \
    && [ ! -f secrets/google-service-account.json ]; then
