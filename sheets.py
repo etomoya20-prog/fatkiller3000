@@ -162,29 +162,43 @@ def build_matrix(rows) -> list[list]:
     """Сводная матрица «участник × дата» с калориями в ячейках.
 
     Собирается из тех же строк дневника, отдельного запроса не требует.
+
+    Колонки — объединение дат по всем участникам, поэтому у новичка слева
+    оказываются дни, когда его в проекте ещё не было. Прогул от «не участвовал»
+    надо отличать: пропущенный день помечается прочерком, а чужой остаётся
+    пустым. Иначе у вступившего вчера вся история выглядит сплошным прогулом.
     """
     dates: list[dt.date] = []
     seen: set[dt.date] = set()
     people: dict[int, str] = {}
+    norms: dict[int, int | None] = {}
     cells: dict[tuple[int, dt.date], float] = {}
+    tracked: set[tuple[int, dt.date]] = set()
 
     for row in rows:
         log_date = row["log_date"]
+        tg_id = row["tg_id"]
         if log_date not in seen:
             seen.add(log_date)
             dates.append(log_date)
-        people.setdefault(row["tg_id"], _name(row))
+        people.setdefault(tg_id, _name(row))
+        norms.setdefault(tg_id, row["kcal_norm"])
+        tracked.add((tg_id, log_date))
         if row["kcal"] is not None:
-            cells[(row["tg_id"], log_date)] = float(row["kcal"])
+            cells[(tg_id, log_date)] = float(row["kcal"])
 
     dates.sort()
     header = ["Участник", "Норма"] + [d.strftime("%d.%m") for d in dates]
-    norms = {row["tg_id"]: row["kcal_norm"] for row in rows}
 
     values = [header]
     for tg_id, name in sorted(people.items(), key=lambda item: item[1]):
-        line = [name, _num(norms.get(tg_id))]
-        line += [_num(cells.get((tg_id, d))) for d in dates]
+        line: list = [name, _num(norms.get(tg_id))]
+        for day in dates:
+            kcal = cells.get((tg_id, day))
+            if kcal is not None:
+                line.append(_num(kcal))
+            else:
+                line.append("—" if (tg_id, day) in tracked else "")
         values.append(line)
     return values
 
