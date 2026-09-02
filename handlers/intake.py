@@ -13,7 +13,7 @@ from aiogram.types import Message
 
 import db
 import llm
-from config import MSK
+from config import MSK, Config
 
 log = logging.getLogger(__name__)
 
@@ -24,8 +24,32 @@ TEXT_EXTENSIONS = {".txt", ".csv", ".tsv", ".json", ".md", ".log"}
 MAX_FILE_BYTES = 15 * 1024 * 1024
 
 
+# Трекеры, которые стоит советовать: с русской базой продуктов и сканером
+# штрихкодов, то есть пригодные для ежедневного учёта без мучений.
+TRACKERS = "FatSecret, MyFitnessPal или YAZIO"
+
+
 def today_msk() -> dt.date:
     return dt.datetime.now(MSK).date()
+
+
+def _photo_estimate_warning(guide_url: str) -> str:
+    """Приписка к оценке по фотографии.
+
+    Оценку мы всё равно записываем — пропущенный день хуже неточного, — но
+    человек должен понимать, что это черновик, иначе он решит, что фотографии
+    достаточно, и будет месяц вести дневник с погрешностью в треть.
+    """
+    lines = [
+        "⚠️ <b>Это прикидка по фотографии.</b> По снимку не видно ни масла на "
+        "сковороде, ни точного веса порции — ошибка легко доходит до трети.",
+        f"Для настоящего учёта заведи трекер калорий: {TRACKERS}. Там база "
+        f"продуктов и сканер штрихкодов. Пришли мне скриншот или выгрузку "
+        f"оттуда — запишу точные цифры вместо оценки (/reset сотрёт сегодняшнее).",
+    ]
+    if guide_url:
+        lines.append(f'📖 <a href="{guide_url}">Как вести дневник питания</a>')
+    return "\n\n".join(lines)
 
 
 async def _require_profile(message: Message) -> dict | None:
@@ -74,7 +98,8 @@ def _extract_text(filename: str, raw: bytes) -> str | None:
 
 
 async def _save_and_reply(message: Message, profile: dict, report: llm.FoodReport,
-                          source: str, raw_input: str | None) -> None:
+                          source: str, raw_input: str | None,
+                          guide_url: str = "") -> None:
     """Общий хвост для всех форматов: пишем в БД и показываем итог дня."""
     if not report.usable:
         await message.answer(
@@ -99,13 +124,24 @@ async def _save_and_reply(message: Message, profile: dict, report: llm.FoodRepor
     )
 
     totals = await db.day_totals(message.from_user.id, log_date)
+    # Про оценку по фото человек через секунду прочитает отдельное и куда более
+    # внятное предупреждение — вежливое «это прикидка» в подписи только дублирует.
+    photo_estimate = report.estimated_from_photo and source == "photo"
+
     # note объясняет, откуда взялась цифра, — это важнее вежливого comment,
     # потому что именно по нему человек заметит, что данные прочитаны не так.
-    footnote = report.note or report.comment
+    footnote = report.note or ("" if photo_estimate else report.comment)
     if report.note:
         # Цифру не прочли напрямую, а вывели — покажем путь к исправлению.
         footnote += "\nЕсли это не так — /reset и пришли данные заново."
     await message.answer(_day_report(profile, totals, footnote))
+
+    # Отдельным сообщением, а не припиской к итогу: предупреждение длинное и в
+    # хвосте отчёта его дочитывают через раз.
+    if photo_estimate:
+        await message.answer(
+            _photo_estimate_warning(guide_url), disable_web_page_preview=True
+        )
 
 
 def _day_report(profile: dict, totals, comment: str | None = None) -> str:
@@ -206,7 +242,7 @@ async def on_document(message: Message, bot: Bot) -> None:
 
 
 @router.message(F.photo)
-async def on_photo(message: Message, bot: Bot) -> None:
+async def on_photo(message: Message, bot: Bot, cfg: Config) -> None:
     profile = await _require_profile(message)
     if not profile:
         return
@@ -222,7 +258,9 @@ async def on_photo(message: Message, bot: Bot) -> None:
         await message.answer("Не смог разобрать картинку, попробуй ещё раз или напиши текстом.")
         return
 
-    await _save_and_reply(message, profile, report, "photo", message.caption)
+    await _save_and_reply(
+        message, profile, report, "photo", message.caption, cfg.guide_url
+    )
 
 
 @router.message(F.text & ~F.text.startswith("/"))

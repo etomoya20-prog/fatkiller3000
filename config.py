@@ -48,6 +48,9 @@ class Config:
     google_sheet_id: str
     export_hour: int
     export_minute: int
+    # Статья про дневник питания: бот прикладывает её к оценкам по фото.
+    # Пустая строка убирает ссылку из ответа.
+    guide_url: str
     # Насколько можно отклониться от нормы, чтобы день всё ещё считался соблюдённым.
     tolerance: float
     # Белый список чатов для сводки. Пустой — шлём во все группы, где бот состоит.
@@ -83,6 +86,10 @@ def load_config() -> Config:
         google_sheet_id=os.getenv("GOOGLE_SHEET_ID", "").strip(),
         export_hour=int(os.getenv("EXPORT_HOUR", "21")),
         export_minute=int(os.getenv("EXPORT_MINUTE", "0")),
+        guide_url=os.getenv(
+            "GUIDE_URL",
+            "https://medvisor.ru/articles/dieta-i-zdorovoe-pitanie/dnevnik-pitaniya/",
+        ).strip(),
         tolerance=float(os.getenv("TOLERANCE", "0.10")),
         group_chat_ids=group_chat_ids,
     )

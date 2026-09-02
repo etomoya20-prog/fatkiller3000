@@ -77,8 +77,9 @@ SYSTEM_PROMPT = """Ты — парсер дневника питания в бо
 - прикинь состав и порцию по виду (тарелка ≈ 25 см, кружка ≈ 250 мл);
 - положи оценку в kcal_consumed и заполни protein_g, fat_g, carb_g;
 - understood = true, is_full_day = false — это один приём пищи;
-- в comment одной фразой скажи, что это оценка на глаз и что точнее будет,
-  если прислать цифры из приложения.
+- обязательно поставь estimated_from_photo = true: по этому флагу бот
+  предупредит человека, что цифры приблизительные;
+- в comment одной фразой скажи, что это оценка на глаз.
 
 Оценка с погрешностью полезнее отказа: человек ведёт дневник, и пропущенный
 день стоит ему больше, чем неточные двести килокалорий. Отказывайся только
@@ -111,7 +112,10 @@ fat_g, carb_g. Но некоторые приложения показывают
    understood = false, а в comment коротко по-русски объясни, чего не хватает
    и что прислать вместо этого.
 4. Числа — в килокалориях и граммах, без единиц измерения. Чего не видно — null.
-5. comment — одна короткая фраза на русском для пользователя, без markdown.
+5. estimated_from_photo = true ТОЛЬКО когда калорийность прикинута по виду еды
+   на фотографии. Цифры, прочитанные с экрана приложения, из выгрузки или из
+   текста пользователя, — это не оценка по фото, там false.
+6. comment — одна короткая фраза на русском для пользователя, без markdown.
    Не пересказывай в нём цифры, их подставит бот.
 
 Отвечай строго в заданной JSON-схеме."""
@@ -152,13 +156,17 @@ RESPONSE_FORMAT = {
                     "type": "boolean",
                     "description": "БЖУ на экране показывают остаток, а не съеденное",
                 },
+                "estimated_from_photo": {
+                    "type": "boolean",
+                    "description": "Калорийность прикинута по виду еды на фото, а не прочитана",
+                },
                 "comment": {"type": "string"},
             },
             "required": [
                 "understood", "is_full_day",
                 "kcal_consumed", "kcal_goal", "kcal_remaining",
                 "protein_g", "fat_g", "carb_g",
-                "macros_are_remaining", "comment",
+                "macros_are_remaining", "estimated_from_photo", "comment",
             ],
         },
     },
@@ -182,6 +190,7 @@ class FoodReport:
     fat_g: float | None
     carb_g: float | None
     macros_are_remaining: bool
+    estimated_from_photo: bool
     comment: str
 
     kcal: float | None = field(init=False, default=None)
