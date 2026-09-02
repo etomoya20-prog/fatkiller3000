@@ -28,8 +28,11 @@ router = Router(name="group")
 router.message.filter(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 
 
-async def _invite_keyboard(bot: Bot, chat_id: int) -> InlineKeyboardMarkup:
-    """Кнопка-диплинк в личку: жать проще, чем вручную писать /start."""
+async def invite_keyboard(bot: Bot, chat_id: int) -> InlineKeyboardMarkup:
+    """Кнопка-диплинк в личку: жать проще, чем вручную писать /start.
+
+    Публичная: этой же кнопкой планировщик подписывает ежедневный список
+    незаполнивших анкету."""
     me = await bot.get_me()
     url = f"https://t.me/{me.username}?start=group{chat_id}"
     return InlineKeyboardMarkup(
@@ -70,7 +73,7 @@ async def _greet_newcomer(bot: Bot, chat, user) -> None:
         f"{_mention(user)}, привет и добро пожаловать!\n\n"
         f"Чтобы я считал твои калории, напиши мне в личку команду /start — "
         f"задам шесть вопросов и рассчитаю дневную норму.",
-        reply_markup=await _invite_keyboard(bot, chat.id),
+        reply_markup=await invite_keyboard(bot, chat.id),
     )
 
 
@@ -149,7 +152,7 @@ async def cmd_join(message: Message, bot: Bot) -> None:
     await message.answer(
         f"{_mention(user)}, записал тебя в участники. "
         f"Теперь напиши мне в личку /start, чтобы заполнить анкету.",
-        reply_markup=await _invite_keyboard(bot, message.chat.id),
+        reply_markup=await invite_keyboard(bot, message.chat.id),
     )
 
 

@@ -200,6 +200,26 @@ async def is_in_any_group(tg_id: int) -> bool:
     return row is not None
 
 
+async def members_without_profile(chat_id: int) -> list[asyncpg.Record]:
+    """Участники чата, которые так и не заполнили анкету.
+
+    Именно они не попадают ни в напоминания, ни в сводку: без нормы считать
+    нечего. Раз в сутки бот перечисляет их в группе, чтобы дошли до /start."""
+    return await pool().fetch(
+        """
+        SELECT u.tg_id, u.full_name, u.username
+          FROM group_members gm
+          JOIN users u ON u.tg_id = gm.tg_id
+         WHERE gm.chat_id = $1
+           AND gm.left_at IS NULL
+           AND u.is_active
+           AND u.onboarded_at IS NULL
+         ORDER BY gm.joined_at
+        """,
+        chat_id,
+    )
+
+
 # --------------------------------------------------------------------------
 # Записи о еде
 # --------------------------------------------------------------------------

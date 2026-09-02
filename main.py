@@ -50,6 +50,14 @@ async def force_reminder(message: Message, bot: Bot) -> None:
     await message.answer("Напоминания разосланы.")
 
 
+@admin_router.message(Command("force_nudge"))
+async def force_nudge(message: Message, bot: Bot, cfg: Config) -> None:
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    await scheduler_module.send_onboarding_nudge(bot, cfg)
+    await message.answer("Перекличка по анкетам отправлена.")
+
+
 @admin_router.message(Command("chatid"))
 async def chat_id(message: Message) -> None:
     if message.from_user.id not in ADMIN_IDS:

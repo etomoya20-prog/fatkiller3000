@@ -36,6 +36,9 @@ class Config:
     # Во сколько по МСК напоминать тем, кто не отчитался за день.
     reminder_hour: int
     reminder_minute: int
+    # Когда перечислять в группе тех, кто не заполнил анкету.
+    nudge_hour: int
+    nudge_minute: int
     # Когда публиковать недельную сводку (day_of_week в терминах APScheduler).
     summary_day: str
     summary_hour: int
@@ -64,6 +67,8 @@ def load_config() -> Config:
         db_dsn=f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}",
         reminder_hour=int(os.getenv("REMINDER_HOUR", "21")),
         reminder_minute=int(os.getenv("REMINDER_MINUTE", "0")),
+        nudge_hour=int(os.getenv("NUDGE_HOUR", "19")),
+        nudge_minute=int(os.getenv("NUDGE_MINUTE", "0")),
         summary_day=os.getenv("SUMMARY_DAY", "sun"),
         summary_hour=int(os.getenv("SUMMARY_HOUR", "20")),
         summary_minute=int(os.getenv("SUMMARY_MINUTE", "0")),
