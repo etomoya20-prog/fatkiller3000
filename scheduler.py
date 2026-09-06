@@ -206,6 +206,13 @@ async def send_weekly_summary(bot: Bot, cfg: Config) -> None:
 
     for chat_id in chat_ids:
         rows = await db.weekly_stats(chat_id, start, end, cfg.tolerance)
+        # Неделя, в которой не отчитался вообще никто, — это не итоги, а список
+        # из восьми нулей. Такое бывает после обнуления статистики или на старте
+        # группы; молчим по той же причине, по которой молчит перекличка.
+        if rows and all(row["reported_days"] == 0 for row in rows):
+            log.info("Сводка в %s пропущена: за неделю нет ни одной записи", chat_id)
+            continue
+
         text = build_summary(rows, start, end, total_days)
         try:
             await bot.send_message(chat_id, text, disable_web_page_preview=True)
