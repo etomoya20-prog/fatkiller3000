@@ -224,6 +224,26 @@ def build_matrix(rows) -> list[list]:
     return values
 
 
+def _clear_formats(book, worksheet) -> None:
+    """Снимает с листа оформление ячеек: clear() стирает только значения.
+
+    Формат приклеен к ячейке, а не к колонке, и переживает перезалив. Набор
+    колонок со временем меняется: когда в «Участников» добавились «Старт, кг»
+    и «Сброшено, кг», всё уехало вправо на два столбца, а «датность» от бывших
+    там «Анкета заполнена» и «В группе с» осталась на месте — и приехавшие
+    на их место граммы жиров стали показываться как 1900-03-26. Сбрасываем
+    формат целиком, нужные даты Google опознает заново при записи.
+    """
+    book.batch_update({
+        "requests": [{
+            "updateCells": {
+                "range": {"sheetId": worksheet.id},
+                "fields": "userEnteredFormat",
+            }
+        }]
+    })
+
+
 def _write_sheet(book, title: str, values: list[list]) -> None:
     """Переписывает лист целиком, подгоняя размер сетки под данные."""
     rows = max(len(values), 2)
@@ -238,6 +258,7 @@ def _write_sheet(book, title: str, values: list[list]) -> None:
     # а лишние старые строки иначе остались бы висеть хвостом под данными.
     worksheet.resize(rows=rows, cols=cols)
     worksheet.clear()
+    _clear_formats(book, worksheet)
     # USER_ENTERED — чтобы даты и числа легли в ячейки датами и числами,
     # а не текстом, иначе в таблице по ним не построить ни график, ни сводную.
     worksheet.update(values=values, range_name="A1", value_input_option="USER_ENTERED")
