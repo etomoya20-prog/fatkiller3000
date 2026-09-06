@@ -82,3 +82,31 @@ CREATE TABLE IF NOT EXISTS reminders (
     sent_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (tg_id, remind_date)
 );
+
+-- Стартовый вес — тот, с которым человек пришёл. Отдельная колонка нужна потому,
+-- что weight_kg теперь меняется на каждом взвешивании и «сколько сброшено с начала»
+-- по нему уже не посчитать.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS start_weight_kg NUMERIC(5, 1);
+UPDATE users SET start_weight_kg = weight_kg
+ WHERE start_weight_kg IS NULL AND weight_kg IS NOT NULL;
+
+-- История взвешиваний: по субботам бот спрашивает текущий вес.
+-- Одна запись на дату — второе взвешивание в тот же день перезаписывает первое.
+CREATE TABLE IF NOT EXISTS weigh_ins (
+    tg_id      BIGINT       NOT NULL REFERENCES users (tg_id) ON DELETE CASCADE,
+    weigh_date DATE         NOT NULL,
+    weight_kg  NUMERIC(5, 1) NOT NULL,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (tg_id, weigh_date)
+);
+
+CREATE INDEX IF NOT EXISTS weigh_ins_tg_date_idx ON weigh_ins (tg_id, weigh_date DESC);
+
+-- Защита от повторного вопроса про вес в ту же субботу: планировщик может
+-- сработать дважды после перезапуска бота (misfire_grace_time).
+CREATE TABLE IF NOT EXISTS weight_prompts (
+    tg_id    BIGINT      NOT NULL,
+    ask_date DATE        NOT NULL,
+    sent_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tg_id, ask_date)
+);

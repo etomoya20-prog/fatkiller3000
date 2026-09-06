@@ -18,7 +18,7 @@ import llm
 import scheduler as scheduler_module
 import sheets
 from config import Config, load_config
-from handlers import group, intake, onboarding
+from handlers import group, intake, onboarding, weighin
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,6 +59,14 @@ async def force_nudge(message: Message, bot: Bot, cfg: Config) -> None:
     await message.answer("Перекличка по анкетам отправлена.")
 
 
+@admin_router.message(Command("force_weighin"))
+async def force_weighin(message: Message, bot: Bot) -> None:
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    await scheduler_module.ask_weigh_in(bot)
+    await message.answer("Вопрос про вес разослан.")
+
+
 @admin_router.message(Command("export"))
 async def force_export(message: Message) -> None:
     if message.from_user.id not in ADMIN_IDS:
@@ -90,6 +98,8 @@ async def set_commands(bot: Bot) -> None:
     await bot.set_my_commands([
         BotCommand(command="start", description="Начать и заполнить анкету"),
         BotCommand(command="today", description="Итог за сегодня"),
+        BotCommand(command="weight", description="Записать текущий вес"),
+        BotCommand(command="weights", description="История взвешиваний"),
         BotCommand(command="profile", description="Моя норма калорий и БЖУ"),
         BotCommand(command="reset", description="Стереть записи за сегодня"),
         BotCommand(command="again", description="Заполнить анкету заново"),
@@ -114,9 +124,12 @@ async def main() -> None:
     dispatcher["cfg"] = cfg
 
     # Порядок важен: intake ловит любой текст, поэтому идёт последним.
+    # weighin стоит перед ним — он забирает ответ на вопрос о весе, а всё
+    # остальное сам передаёт дальше в приёмку отчётов.
     dispatcher.include_router(admin_router)
     dispatcher.include_router(group.router)
     dispatcher.include_router(onboarding.router)
+    dispatcher.include_router(weighin.router)
     dispatcher.include_router(intake.router)
 
     scheduler = scheduler_module.build_scheduler(bot, cfg)

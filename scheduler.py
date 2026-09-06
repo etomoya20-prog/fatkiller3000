@@ -1,5 +1,5 @@
 """Регулярные задачи: вечернее напоминание, ежедневная перекличка по анкетам,
-выгрузка в Google Sheets и недельная сводка в группу."""
+субботний вопрос про вес, выгрузка в Google Sheets и недельная сводка в группу."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ import db
 import sheets
 from config import MSK, Config
 from handlers.group import invite_keyboard
+from handlers.weighin import PROMPT as WEIGH_IN_PROMPT, WEIGH_KB
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +59,24 @@ async def send_reminders(bot: Bot) -> None:
         )
         if sent:
             await db.mark_reminded(row["tg_id"], today)
+        await asyncio.sleep(SEND_DELAY)
+
+
+async def ask_weigh_in(bot: Bot) -> None:
+    """Субботний вопрос про вес — в личку каждому, кто заполнил анкету.
+
+    Групповое взвешивание никому не нужно: цифра личная, а в общий чат её всё
+    равно никто не понесёт. Ответ бот ждёт не молча — человек подтверждает
+    намерение кнопкой, иначе следующий отчёт о еде уехал бы в весы.
+    """
+    today = dt.datetime.now(MSK).date()
+    targets = await db.users_for_weigh_in(today)
+    log.info("Взвешивание: спрашиваю вес у %d человек", len(targets))
+
+    for row in targets:
+        sent = await _safe_send(bot, row["tg_id"], WEIGH_IN_PROMPT, reply_markup=WEIGH_KB)
+        if sent:
+            await db.mark_weight_asked(row["tg_id"], today)
         await asyncio.sleep(SEND_DELAY)
 
 
@@ -241,6 +260,21 @@ def build_scheduler(bot: Bot, cfg: Config) -> AsyncIOScheduler:
             coalesce=True,
             replace_existing=True,
         )
+
+    scheduler.add_job(
+        ask_weigh_in,
+        CronTrigger(
+            day_of_week=cfg.weighin_day,
+            hour=cfg.weighin_hour,
+            minute=cfg.weighin_minute,
+            timezone=MSK,
+        ),
+        args=[bot],
+        id="weigh_in_prompt",
+        misfire_grace_time=3600,
+        coalesce=True,
+        replace_existing=True,
+    )
 
     scheduler.add_job(
         send_weekly_summary,

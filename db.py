@@ -86,6 +86,9 @@ async def save_profile(tg_id: int, profile: dict[str, Any]) -> None:
                age              = $3,
                height_cm        = $4,
                weight_kg        = $5,
+               -- Стартовый вес ставится один раз: /again не должен обнулять
+               -- уже пройденный путь, иначе «сброшено с начала» всегда ноль.
+               start_weight_kg  = COALESCE(users.start_weight_kg, $5),
                target_weight_kg = $6,
                activity         = $7,
                kcal_norm        = $8,
@@ -397,6 +400,127 @@ async def claim_photo_hint(tg_id: int, hint_date: dt.date) -> bool:
 
 
 # --------------------------------------------------------------------------
+# Взвешивания
+# --------------------------------------------------------------------------
+
+async def users_for_weigh_in(ask_date: dt.date) -> list[asyncpg.Record]:
+    """Кого сегодня спрашиваем про вес: тот же круг, что и в напоминаниях —
+    активные, с анкетой, состоящие хотя бы в одной живой группе.
+
+    Уже спрошенные за эту дату отсеиваются: планировщик после перезапуска бота
+    может отработать субботнюю задачу второй раз."""
+    return await pool().fetch(
+        """
+        SELECT u.tg_id, u.full_name
+          FROM users u
+         WHERE u.is_active
+           AND u.onboarded_at IS NOT NULL
+           AND EXISTS (SELECT 1 FROM group_members gm
+                         JOIN chats c ON c.chat_id = gm.chat_id
+                        WHERE gm.tg_id = u.tg_id
+                          AND gm.left_at IS NULL
+                          AND c.is_active)
+           AND NOT EXISTS (SELECT 1 FROM weight_prompts w
+                            WHERE w.tg_id = u.tg_id AND w.ask_date = $1)
+        """,
+        ask_date,
+    )
+
+
+async def mark_weight_asked(tg_id: int, ask_date: dt.date) -> None:
+    await pool().execute(
+        """
+        INSERT INTO weight_prompts (tg_id, ask_date) VALUES ($1, $2)
+        ON CONFLICT DO NOTHING
+        """,
+        tg_id, ask_date,
+    )
+
+
+async def previous_weight(tg_id: int, weigh_date: dt.date) -> float | None:
+    """Вес с прошлого взвешивания. Если человек взвешивается впервые, берём тот,
+    что он назвал в анкете, — иначе первую динамику показать не с чем."""
+    row = await pool().fetchrow(
+        """
+        SELECT COALESCE(
+                   (SELECT w.weight_kg FROM weigh_ins w
+                     WHERE w.tg_id = $1 AND w.weigh_date < $2
+                     ORDER BY w.weigh_date DESC LIMIT 1),
+                   u.weight_kg
+               ) AS weight_kg
+          FROM users u
+         WHERE u.tg_id = $1
+        """,
+        tg_id, weigh_date,
+    )
+    return float(row["weight_kg"]) if row and row["weight_kg"] is not None else None
+
+
+async def save_weigh_in(
+    tg_id: int, weigh_date: dt.date, weight_kg: float, norms: dict[str, int] | None
+) -> None:
+    """Записывает взвешивание и делает этот вес текущим.
+
+    Норма пересчитывается тем же расчётом, что и в анкете: она зависит от веса,
+    и без пересчёта похудевший на десять килограммов продолжал бы есть на старую.
+    norms=None оставляет норму как есть — так бывает, когда вес уже дошёл до цели
+    и дефицит дальше считать не от чего.
+    """
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                """
+                INSERT INTO weigh_ins (tg_id, weigh_date, weight_kg)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (tg_id, weigh_date) DO UPDATE
+                    SET weight_kg = EXCLUDED.weight_kg, created_at = now()
+                """,
+                tg_id, weigh_date, weight_kg,
+            )
+            if norms is None:
+                await conn.execute(
+                    """
+                    UPDATE users
+                       SET weight_kg       = $2,
+                           start_weight_kg = COALESCE(start_weight_kg, $2),
+                           updated_at      = now()
+                     WHERE tg_id = $1
+                    """,
+                    tg_id, weight_kg,
+                )
+            else:
+                await conn.execute(
+                    """
+                    UPDATE users
+                       SET weight_kg       = $2,
+                           start_weight_kg = COALESCE(start_weight_kg, $2),
+                           kcal_norm       = $3,
+                           protein_g       = $4,
+                           fat_g           = $5,
+                           carb_g          = $6,
+                           updated_at      = now()
+                     WHERE tg_id = $1
+                    """,
+                    tg_id, weight_kg,
+                    norms["kcal_norm"], norms["protein_g"],
+                    norms["fat_g"], norms["carb_g"],
+                )
+
+
+async def weigh_in_history(tg_id: int, limit: int = 8) -> list[asyncpg.Record]:
+    return await pool().fetch(
+        """
+        SELECT weigh_date, weight_kg
+          FROM weigh_ins
+         WHERE tg_id = $1
+         ORDER BY weigh_date DESC
+         LIMIT $2
+        """,
+        tg_id, limit,
+    )
+
+
+# --------------------------------------------------------------------------
 # Выгрузка в Google Sheets
 # --------------------------------------------------------------------------
 
@@ -411,7 +535,7 @@ async def export_participants() -> list[asyncpg.Record]:
         """
         SELECT DISTINCT ON (u.tg_id)
                u.tg_id, u.full_name, u.username, u.gender, u.age, u.height_cm,
-               u.weight_kg, u.target_weight_kg, u.activity, u.kcal_norm,
+               u.start_weight_kg, u.weight_kg, u.target_weight_kg, u.activity, u.kcal_norm,
                u.protein_g, u.fat_g, u.carb_g, u.onboarded_at, u.is_active,
                gm.joined_at
           FROM group_members gm

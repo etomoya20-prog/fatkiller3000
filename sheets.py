@@ -93,7 +93,8 @@ def _name(row) -> str:
 def build_participants(rows) -> list[list]:
     header = [
         "Имя", "Username", "Telegram ID", "Пол", "Возраст", "Рост, см",
-        "Вес, кг", "Цель, кг", "Осталось, кг", "Активность", "Норма, ккал",
+        "Старт, кг", "Вес, кг", "Цель, кг", "Осталось, кг", "Сброшено, кг",
+        "Активность", "Норма, ккал",
         "Белки, г", "Жиры, г", "Углеводы, г", "Анкета заполнена", "В группе с",
         "Статус",
     ]
@@ -101,7 +102,10 @@ def build_participants(rows) -> list[list]:
     for row in sorted(rows, key=_name):
         weight = row["weight_kg"]
         target = row["target_weight_kg"]
+        start = row["start_weight_kg"]
         to_go = float(weight) - float(target) if weight is not None and target is not None else None
+        # Со знаком минус, если человек набрал: рисовать прибавку как достижение нельзя.
+        lost = float(start) - float(weight) if weight is not None and start is not None else None
         activity = ACTIVITY_FACTORS.get(row["activity"] or "", (None, ""))[1]
 
         if not row["is_active"]:
@@ -118,9 +122,11 @@ def build_participants(rows) -> list[list]:
             GENDERS.get(row["gender"] or "", ""),
             _num(row["age"]),
             _num(row["height_cm"]),
+            _num(start),
             _num(weight),
             _num(target),
             _num(to_go),
+            _num(lost),
             activity,
             _num(row["kcal_norm"]),
             _num(row["protein_g"]),

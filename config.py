@@ -43,6 +43,10 @@ class Config:
     summary_day: str
     summary_hour: int
     summary_minute: int
+    # Когда спрашивать в личке текущий вес.
+    weighin_day: str
+    weighin_hour: int
+    weighin_minute: int
     # Ежедневная выгрузка в Google Sheets. Пустые значения выключают её.
     google_credentials_file: str
     google_sheet_id: str
@@ -80,6 +84,9 @@ def load_config() -> Config:
         summary_day=os.getenv("SUMMARY_DAY", "sun"),
         summary_hour=int(os.getenv("SUMMARY_HOUR", "20")),
         summary_minute=int(os.getenv("SUMMARY_MINUTE", "0")),
+        weighin_day=os.getenv("WEIGHIN_DAY", "sat"),
+        weighin_hour=int(os.getenv("WEIGHIN_HOUR", "10")),
+        weighin_minute=int(os.getenv("WEIGHIN_MINUTE", "0")),
         google_credentials_file=os.getenv(
             "GOOGLE_CREDENTIALS_FILE", "/app/secrets/google-service-account.json"
         ),
