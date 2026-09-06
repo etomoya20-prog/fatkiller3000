@@ -32,14 +32,21 @@ SHEET_MATRIX = "По дням"
 _credentials_file: str | None = None
 _sheet_id: str | None = None
 _tolerance = 0.10
+_history_start: dt.date | None = None
 
 GENDERS = {"male": "муж", "female": "жен"}
 
 
-def init(credentials_file: str | None, sheet_id: str | None, tolerance: float) -> None:
+def init(
+    credentials_file: str | None,
+    sheet_id: str | None,
+    tolerance: float,
+    history_start: dt.date | None = None,
+) -> None:
     """Включает выгрузку, если заданы и ключ, и таблица."""
-    global _credentials_file, _sheet_id, _tolerance
+    global _credentials_file, _sheet_id, _tolerance, _history_start
     _tolerance = tolerance
+    _history_start = history_start
 
     if not credentials_file or not sheet_id:
         log.info("Выгрузка в Google Sheets выключена: не заданы ключ или ID таблицы")
@@ -254,7 +261,7 @@ async def export() -> str | None:
 
     today = dt.datetime.now(MSK).date()
     participant_rows = await db.export_participants()
-    diary_rows = await db.export_diary(today)
+    diary_rows = await db.export_diary(today, _history_start)
 
     participants = build_participants(participant_rows)
     diary = build_diary(diary_rows, _tolerance)

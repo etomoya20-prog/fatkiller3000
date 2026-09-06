@@ -112,7 +112,9 @@ async def main() -> None:
 
     await db.init(cfg.db_dsn)
     llm.init(cfg.openai_api_key, cfg.openai_model)
-    sheets.init(cfg.google_credentials_file, cfg.google_sheet_id, cfg.tolerance)
+    sheets.init(
+        cfg.google_credentials_file, cfg.google_sheet_id, cfg.tolerance, cfg.history_start
+    )
 
     bot = Bot(
         token=cfg.bot_token,

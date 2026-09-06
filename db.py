@@ -324,7 +324,8 @@ async def mark_reminded(tg_id: int, remind_date: dt.date) -> None:
 # --------------------------------------------------------------------------
 
 async def weekly_stats(
-    chat_id: int, start: dt.date, end: dt.date, tolerance: float
+    chat_id: int, start: dt.date, end: dt.date, tolerance: float,
+    history_start: dt.date | None = None,
 ) -> list[asyncpg.Record]:
     """По каждому участнику группы за период [start, end]:
     сколько дней уложился в коридор нормы, сколько дней вообще не отчитался,
@@ -332,14 +333,19 @@ async def weekly_stats(
 
     Отсчёт ведётся не с начала недели, а со дня вступления в группу, если человек
     пришёл позже: иначе новичок в первой же сводке выглядит прогульщиком за дни,
-    когда его тут не было. Сколько дней реально зачтено — в tracked_days."""
+    когда его тут не было. Сколько дней реально зачтено — в tracked_days.
+
+    history_start отсекает дни до обнуления статистики по той же причине: записей
+    за них нет и не будет. NULL в GREATEST Postgres игнорирует, поэтому незаданная
+    дата просто ничего не ограничивает."""
     return await pool().fetch(
         """
         WITH members AS (
             SELECT u.tg_id, u.full_name, u.username, u.kcal_norm,
                    GREATEST(
                        $2::date,
-                       (gm.joined_at AT TIME ZONE 'Europe/Moscow')::date
+                       (gm.joined_at AT TIME ZONE 'Europe/Moscow')::date,
+                       $5::date
                    ) AS from_date
               FROM group_members gm
               JOIN users u ON u.tg_id = gm.tg_id
@@ -379,7 +385,7 @@ async def weekly_stats(
          GROUP BY m.tg_id, m.full_name, m.username, m.kcal_norm
          ORDER BY on_track_days DESC, missed_days ASC, m.full_name
         """,
-        chat_id, start, end, tolerance,
+        chat_id, start, end, tolerance, history_start,
     )
 async def claim_photo_hint(tg_id: int, hint_date: dt.date) -> bool:
     """Резервирует право показать сегодня полное предупреждение про фото.
@@ -547,13 +553,18 @@ async def export_participants() -> list[asyncpg.Record]:
     )
 
 
-async def export_diary(until: dt.date) -> list[asyncpg.Record]:
+async def export_diary(
+    until: dt.date, history_start: dt.date | None = None
+) -> list[asyncpg.Record]:
     """Построчный дневник: по строке на каждый день каждого участника с анкетой.
 
     Дни без записей тоже попадают в выгрузку с пустыми калориями — именно они
     показывают пропуски. Отсчёт для человека начинается с самой ранней из дат:
     вступление, анкета, первая запись. Иначе у тех, кого бот опознал задним
     числом (см. add_group_member), потерялась бы уже накопленная история.
+
+    Ниже history_start выгрузка не опускается: после обнуления статистики те дни
+    выглядели бы сплошным прогулом у всех, хотя записи оттуда просто стёрты.
     """
     return await pool().fetch(
         """
@@ -580,9 +591,15 @@ async def export_diary(until: dt.date) -> list[asyncpg.Record]:
                    ) AS from_date
               FROM members m
         ),
+        -- GREATEST игнорирует NULL, поэтому незаданный history_start ничего не режет.
+        starts AS (
+            SELECT b.tg_id, b.full_name, b.username, b.kcal_norm,
+                   GREATEST(b.from_date, $2::date) AS from_date
+              FROM bounds b
+        ),
         days AS (
             SELECT b.tg_id, b.full_name, b.username, b.kcal_norm, d::date AS log_date
-              FROM bounds b
+              FROM starts b
               CROSS JOIN LATERAL
                    generate_series(b.from_date, $1::date, interval '1 day') AS d
         )
@@ -597,5 +614,5 @@ async def export_diary(until: dt.date) -> list[asyncpg.Record]:
          GROUP BY d.log_date, d.tg_id, d.full_name, d.username, d.kcal_norm
          ORDER BY d.log_date, d.full_name
         """,
-        until,
+        until, history_start,
     )

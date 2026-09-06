@@ -1,5 +1,6 @@
 """Конфигурация бота: читается из переменных окружения (в compose — из .env)."""
 
+import datetime as dt
 import os
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
@@ -57,6 +58,10 @@ class Config:
     guide_url: str
     # Насколько можно отклониться от нормы, чтобы день всё ещё считался соблюдённым.
     tolerance: float
+    # С какой даты вести историю. Дни до неё не считаются прогулами и не попадают
+    # в выгрузку: после обнуления статистики записей за них нет и быть не должно.
+    # None — считать с самого начала, как было до первого обнуления.
+    history_start: dt.date | None
     # Белый список чатов для сводки. Пустой — шлём во все группы, где бот состоит.
     group_chat_ids: list[int]
 
@@ -67,6 +72,10 @@ def load_config() -> Config:
     db_name = os.getenv("DB_NAME", "fatkiller3000")
     db_host = os.getenv("DB_HOST", "host.docker.internal")
     db_port = os.getenv("DB_PORT", "5432")
+
+    # Пустое значение снимает ограничение: это нормальное состояние до первого обнуления.
+    raw_history_start = os.getenv("HISTORY_START", "").strip()
+    history_start = dt.date.fromisoformat(raw_history_start) if raw_history_start else None
 
     # Допускаем несколько ID через запятую: бот может работать в нескольких группах.
     raw_chat_ids = os.getenv("GROUP_CHAT_ID", "").replace(" ", "")
@@ -98,5 +107,6 @@ def load_config() -> Config:
             "https://medvisor.ru/articles/dieta-i-zdorovoe-pitanie/dnevnik-pitaniya/",
         ).strip(),
         tolerance=float(os.getenv("TOLERANCE", "0.10")),
+        history_start=history_start,
         group_chat_ids=group_chat_ids,
     )

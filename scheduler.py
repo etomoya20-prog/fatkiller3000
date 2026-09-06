@@ -205,11 +205,16 @@ async def send_weekly_summary(bot: Bot, cfg: Config) -> None:
     log.info("Рассылаю сводку в %d групп(ы)", len(chat_ids))
 
     for chat_id in chat_ids:
-        rows = await db.weekly_stats(chat_id, start, end, cfg.tolerance)
+        rows = await db.weekly_stats(
+            chat_id, start, end, cfg.tolerance, cfg.history_start
+        )
         # Неделя, в которой не отчитался вообще никто, — это не итоги, а список
         # из восьми нулей. Такое бывает после обнуления статистики или на старте
         # группы; молчим по той же причине, по которой молчит перекличка.
-        if rows and all(row["reported_days"] == 0 for row in rows):
+        # Пустой список значит, что считать пока не по кому: анкет нет или неделя
+        # целиком лежит до history_start. Звать в анкету — работа переклички,
+        # она делает это каждый вечер и адресно.
+        if not rows or all(row["reported_days"] == 0 for row in rows):
             log.info("Сводка в %s пропущена: за неделю нет ни одной записи", chat_id)
             continue
 
