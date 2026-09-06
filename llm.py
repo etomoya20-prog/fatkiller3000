@@ -31,6 +31,12 @@ KCAL_PER_G_CARB = 4
 MACRO_MISMATCH_RATIO = 0.25
 MACRO_MISMATCH_FLOOR = 200.0
 
+# Насколько «съедено» и «цель минус остаток» могут разойтись, оставаясь одним и тем
+# же числом: приложения округляют по-разному. Дальше это уже разные цифры и надо
+# выбирать, какой верить.
+CANDIDATE_AGREEMENT_RATIO = 0.05
+CANDIDATE_AGREEMENT_FLOOR = 100.0
+
 
 def init(api_key: str, model: str) -> None:
     global _client, _model
@@ -222,31 +228,88 @@ class FoodReport:
         )
         return total if total > 0 else None
 
+    def _derived_kcal(self) -> float | None:
+        """Съеденное как «цель минус остаток» — арифметика самой разметки экрана."""
+        if not self.kcal_goal or self.kcal_remaining is None:
+            return None
+        derived = float(self.kcal_goal) - float(self.kcal_remaining)
+        return derived if derived > 0 else None
+
+    def _derived_note(self, derived: float) -> str:
+        return (
+            f"Со скриншота: цель {self.kcal_goal:.0f}, "
+            f"осталось {self.kcal_remaining:.0f} — значит съедено {derived:.0f}."
+        )
+
     def _resolve(self) -> tuple[float | None, str]:
         macro_kcal = self._macro_kcal()
+        derived = self._derived_kcal()
+        consumed = (
+            float(self.kcal_consumed)
+            if self.kcal_consumed and self.kcal_consumed > 0
+            else None
+        )
 
-        # 1. Цель и остаток вместе — это разметка приложения, вычитание однозначно
-        #    и надёжнее любой отдельно прочитанной цифры.
-        if self.kcal_goal and self.kcal_remaining is not None:
-            derived = float(self.kcal_goal) - float(self.kcal_remaining)
-            if derived > 0:
-                note = (
-                    f"Со скриншота: цель {self.kcal_goal:.0f}, "
-                    f"осталось {self.kcal_remaining:.0f} — значит съедено {derived:.0f}."
-                )
-                return self._cross_check(derived, macro_kcal, trust_macros=False, note=note)
+        # 1. Экран показал и подписанное «съедено», и пару «цель/осталось».
+        if derived is not None and consumed is not None:
+            return self._arbitrate(consumed, derived, macro_kcal)
 
-        # 2. Явно подписанное съеденное.
-        if self.kcal_consumed and self.kcal_consumed > 0:
+        # 2. Только цель с остатком: вычитание надёжнее крупной цифры на экране,
+        #    её слишком легко принять за съеденное.
+        if derived is not None:
             return self._cross_check(
-                float(self.kcal_consumed), macro_kcal, trust_macros=True, note=""
+                derived, macro_kcal, trust_macros=False, note=self._derived_note(derived)
             )
 
-        # 3. Калорий не видно, но есть БЖУ — считаем по ним.
+        # 3. Только подписанное съеденное.
+        if consumed is not None:
+            return self._cross_check(consumed, macro_kcal, trust_macros=True, note="")
+
+        # 4. Калорий не видно, но есть БЖУ — считаем по ним.
         if macro_kcal is not None:
             return macro_kcal, "Калории посчитаны по белкам, жирам и углеводам."
 
         return None, ""
+
+    def _arbitrate(
+        self, consumed: float, derived: float, macro_kcal: float | None
+    ) -> tuple[float, str]:
+        """Выбирает между подписанным «съедено» и вычитанием «цель минус остаток».
+
+        Расходятся они регулярно, и обычно по понятной причине: остаток приложение
+        считает от цели с учётом тренировок, а подписана рядом базовая цель. Тогда
+        вычитание врёт, а «съедено» — нет. Обратный случай тоже реален: модель
+        кладёт остаток сразу в оба поля, и «съедено» просто повторяет остаток.
+
+        Рассудить может третье, независимое число — сумма по БЖУ. Она читается
+        с других мест экрана, и согласованно ошибиться со съеденным ей неоткуда.
+        """
+        agreement = max(CANDIDATE_AGREEMENT_FLOOR, derived * CANDIDATE_AGREEMENT_RATIO)
+        if abs(consumed - derived) <= agreement:
+            # Одно и то же число, разошлись только округления.
+            return derived, self._derived_note(derived)
+
+        if macro_kcal is not None:
+            if abs(macro_kcal - consumed) <= abs(macro_kcal - derived):
+                return consumed, (
+                    f"На экране съедено {consumed:.0f}, а цель минус остаток даёт "
+                    f"{derived:.0f}. По БЖУ выходит {macro_kcal:.0f} — "
+                    f"взял {consumed:.0f}."
+                )
+            return derived, (
+                f"{self._derived_note(derived)} Подписанное «съедено {consumed:.0f}» "
+                f"с БЖУ ({macro_kcal:.0f}) не сходится."
+            )
+
+        # БЖУ нет, рассудить нечем. Если «съедено» повторяет остаток, модель
+        # положила одно число в два поля — верить можно только вычитанию.
+        if self.kcal_remaining is not None and abs(consumed - float(self.kcal_remaining)) < 1:
+            return derived, self._derived_note(derived)
+
+        return consumed, (
+            f"На экране съедено {consumed:.0f}, хотя цель минус остаток даёт "
+            f"{derived:.0f}. Взял подписанное число."
+        )
 
     def _cross_check(
         self, value: float, macro_kcal: float | None, trust_macros: bool, note: str
