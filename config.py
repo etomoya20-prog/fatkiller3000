@@ -100,8 +100,8 @@ def load_config() -> Config:
             "GOOGLE_CREDENTIALS_FILE", "/app/secrets/google-service-account.json"
         ),
         google_sheet_id=os.getenv("GOOGLE_SHEET_ID", "").strip(),
-        export_hour=int(os.getenv("EXPORT_HOUR", "21")),
-        export_minute=int(os.getenv("EXPORT_MINUTE", "0")),
+        export_hour=int(os.getenv("EXPORT_HOUR", "23")),
+        export_minute=int(os.getenv("EXPORT_MINUTE", "50")),
         guide_url=os.getenv(
             "GUIDE_URL",
             "https://medvisor.ru/articles/dieta-i-zdorovoe-pitanie/dnevnik-pitaniya/",
