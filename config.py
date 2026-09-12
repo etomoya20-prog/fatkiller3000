@@ -54,8 +54,10 @@ class Config:
     # Ежедневная выгрузка в Google Sheets. Пустые значения выключают её.
     google_credentials_file: str
     google_sheet_id: str
-    export_hour: int
-    export_minute: int
+    # Вечером таблица обновляется каждые export_every_minutes минут, начиная
+    # с export_from_hour и до полуночи, плюс финальный прогон в 23:55.
+    export_from_hour: int
+    export_every_minutes: int
     # Статья про дневник питания: бот прикладывает её к оценкам по фото.
     # Пустая строка убирает ссылку из ответа.
     guide_url: str
@@ -103,8 +105,8 @@ def load_config() -> Config:
             "GOOGLE_CREDENTIALS_FILE", "/app/secrets/google-service-account.json"
         ),
         google_sheet_id=os.getenv("GOOGLE_SHEET_ID", "").strip(),
-        export_hour=int(os.getenv("EXPORT_HOUR", "23")),
-        export_minute=int(os.getenv("EXPORT_MINUTE", "50")),
+        export_from_hour=int(os.getenv("EXPORT_FROM_HOUR", "20")),
+        export_every_minutes=int(os.getenv("EXPORT_EVERY_MINUTES", "30")),
         guide_url=os.getenv(
             "GUIDE_URL",
             "https://medvisor.ru/articles/dieta-i-zdorovoe-pitanie/dnevnik-pitaniya/",

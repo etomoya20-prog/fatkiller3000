@@ -264,10 +264,27 @@ def build_scheduler(bot: Bot, cfg: Config) -> AsyncIOScheduler:
     )
 
     if sheets.enabled():
+        # Отчёты приходят вечером, особенно после напоминания в 21:00, поэтому
+        # таблицу обновляем каждые полчаса с 20:00. Грейс короче интервала:
+        # опоздавший прогон всё равно перекроет следующий.
         scheduler.add_job(
             run_export,
-            CronTrigger(hour=cfg.export_hour, minute=cfg.export_minute, timezone=MSK),
+            CronTrigger(
+                hour=f"{cfg.export_from_hour}-23",
+                minute=f"*/{cfg.export_every_minutes}",
+                timezone=MSK,
+            ),
             id="sheets_export",
+            misfire_grace_time=cfg.export_every_minutes * 60,
+            coalesce=True,
+            replace_existing=True,
+        )
+        # Последний прогон перед полуночью, чтобы в таблицу попали и отчёты,
+        # присланные после 23:30, а не ждали следующего вечера.
+        scheduler.add_job(
+            run_export,
+            CronTrigger(hour=23, minute=55, timezone=MSK),
+            id="sheets_export_final",
             misfire_grace_time=3600,
             coalesce=True,
             replace_existing=True,

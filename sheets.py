@@ -33,6 +33,9 @@ _credentials_file: str | None = None
 _sheet_id: str | None = None
 _tolerance = 0.10
 _history_start: dt.date | None = None
+# Каждый лист сначала очищается, потом заливается. Прогон по расписанию и ручной
+# /export, запущенные внахлёст, перемешали бы эти шаги, так что пускаем по одному.
+_export_lock = asyncio.Lock()
 
 GENDERS = {"male": "муж", "female": "жен"}
 
@@ -280,15 +283,16 @@ async def export() -> str | None:
         log.info("Выгрузка пропущена: не настроена")
         return None
 
-    today = dt.datetime.now(MSK).date()
-    participant_rows = await db.export_participants()
-    diary_rows = await db.export_diary(today, _history_start)
+    async with _export_lock:
+        today = dt.datetime.now(MSK).date()
+        participant_rows = await db.export_participants()
+        diary_rows = await db.export_diary(today, _history_start)
 
-    participants = build_participants(participant_rows)
-    diary = build_diary(diary_rows, _tolerance)
-    matrix = build_matrix(diary_rows)
+        participants = build_participants(participant_rows)
+        diary = build_diary(diary_rows, _tolerance)
+        matrix = build_matrix(diary_rows)
 
-    url = await asyncio.to_thread(_push, participants, diary, matrix)
+        url = await asyncio.to_thread(_push, participants, diary, matrix)
     log.info(
         "Выгрузка готова: %d участников, %d строк дневника",
         len(participants) - 1, len(diary) - 1,
