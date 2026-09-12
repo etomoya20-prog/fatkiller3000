@@ -69,6 +69,9 @@ class Config:
     history_start: dt.date | None
     # Белый список чатов для сводки. Пустой — шлём во все группы, где бот состоит.
     group_chat_ids: list[int]
+    # Владелец бота: только он одобряет новые группы. None — одобрять некому,
+    # и бот в новых группах так и будет молчать.
+    owner_id: int | None
 
 
 def load_config() -> Config:
@@ -81,6 +84,9 @@ def load_config() -> Config:
     # Пустое значение снимает ограничение: это нормальное состояние до первого обнуления.
     raw_history_start = os.getenv("HISTORY_START", "").strip()
     history_start = dt.date.fromisoformat(raw_history_start) if raw_history_start else None
+
+    raw_owner_id = os.getenv("OWNER_ID", "").strip()
+    owner_id = int(raw_owner_id) if raw_owner_id else None
 
     # Допускаем несколько ID через запятую: бот может работать в нескольких группах.
     raw_chat_ids = os.getenv("GROUP_CHAT_ID", "").replace(" ", "")
@@ -114,4 +120,5 @@ def load_config() -> Config:
         tolerance=float(os.getenv("TOLERANCE", "0.10")),
         history_start=history_start,
         group_chat_ids=group_chat_ids,
+        owner_id=owner_id,
     )

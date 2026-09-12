@@ -18,7 +18,7 @@ import llm
 import scheduler as scheduler_module
 import sheets
 from config import Config, load_config
-from handlers import group, intake, onboarding, weighin
+from handlers import approval, group, intake, onboarding, weighin
 
 logging.basicConfig(
     level=logging.INFO,
@@ -129,6 +129,9 @@ async def main() -> None:
     # weighin стоит перед ним — он забирает ответ на вопрос о весе, а всё
     # остальное сам передаёт дальше в приёмку отчётов.
     dispatcher.include_router(admin_router)
+    # approval стоит перед group: служебное сообщение о переезде в супергруппу
+    # приходит с нового ID, который ещё не одобрен, и фильтр group его бы отсёк.
+    dispatcher.include_router(approval.router)
     dispatcher.include_router(group.router)
     dispatcher.include_router(onboarding.router)
     dispatcher.include_router(weighin.router)

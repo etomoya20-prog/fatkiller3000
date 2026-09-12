@@ -134,8 +134,42 @@ async def deactivate_chat(chat_id: int) -> None:
 
 
 async def active_chats() -> list[int]:
-    rows = await pool().fetch("SELECT chat_id FROM chats WHERE is_active ORDER BY chat_id")
+    rows = await pool().fetch(
+        "SELECT chat_id FROM chats WHERE is_active AND approved_at IS NOT NULL ORDER BY chat_id"
+    )
     return [r["chat_id"] for r in rows]
+
+
+async def is_chat_approved(chat_id: int) -> bool:
+    return bool(await pool().fetchval(
+        "SELECT approved_at IS NOT NULL FROM chats WHERE chat_id = $1", chat_id
+    ))
+
+
+async def approve_chat(chat_id: int) -> None:
+    await pool().execute(
+        "UPDATE chats SET approved_at = COALESCE(approved_at, now()) WHERE chat_id = $1",
+        chat_id,
+    )
+
+
+async def transfer_approval(old_chat_id: int, new_chat_id: int, title: str | None) -> None:
+    """Переносит одобрение на новый ID группы.
+
+    Когда обычная группа становится супергруппой, Telegram меняет ей ID. Без
+    переноса владельцу пришлось бы заново одобрять ту же самую группу, а бот
+    до этого молчал бы в ней."""
+    await pool().execute(
+        """
+        INSERT INTO chats (chat_id, title, approved_at)
+        SELECT $2, $3, approved_at FROM chats
+         WHERE chat_id = $1 AND approved_at IS NOT NULL
+        ON CONFLICT (chat_id) DO UPDATE
+            SET approved_at = COALESCE(chats.approved_at, EXCLUDED.approved_at),
+                is_active   = TRUE
+        """,
+        old_chat_id, new_chat_id, title,
+    )
 
 
 async def add_group_member(chat_id: int, tg_id: int) -> None:
@@ -195,7 +229,8 @@ async def is_in_any_group(tg_id: int) -> bool:
         SELECT 1
           FROM group_members gm
           JOIN chats c ON c.chat_id = gm.chat_id
-         WHERE gm.tg_id = $1 AND gm.left_at IS NULL AND c.is_active
+         WHERE gm.tg_id = $1 AND gm.left_at IS NULL
+           AND c.is_active AND c.approved_at IS NOT NULL
          LIMIT 1
         """,
         tg_id,
@@ -299,7 +334,8 @@ async def users_without_entry(log_date: dt.date) -> list[asyncpg.Record]:
                          JOIN chats c ON c.chat_id = gm.chat_id
                         WHERE gm.tg_id = u.tg_id
                           AND gm.left_at IS NULL
-                          AND c.is_active)
+                          AND c.is_active
+                          AND c.approved_at IS NOT NULL)
            AND NOT EXISTS (SELECT 1 FROM entries e
                             WHERE e.tg_id = u.tg_id AND e.log_date = $1)
            AND NOT EXISTS (SELECT 1 FROM reminders r
@@ -425,7 +461,8 @@ async def users_for_weigh_in(ask_date: dt.date) -> list[asyncpg.Record]:
                          JOIN chats c ON c.chat_id = gm.chat_id
                         WHERE gm.tg_id = u.tg_id
                           AND gm.left_at IS NULL
-                          AND c.is_active)
+                          AND c.is_active
+                          AND c.approved_at IS NOT NULL)
            AND NOT EXISTS (SELECT 1 FROM weight_prompts w
                             WHERE w.tg_id = u.tg_id AND w.ask_date = $1)
         """,
@@ -545,7 +582,7 @@ async def export_participants() -> list[asyncpg.Record]:
                u.protein_g, u.fat_g, u.carb_g, u.onboarded_at, u.is_active,
                gm.joined_at
           FROM group_members gm
-          JOIN chats c ON c.chat_id = gm.chat_id AND c.is_active
+          JOIN chats c ON c.chat_id = gm.chat_id AND c.is_active AND c.approved_at IS NOT NULL
           JOIN users u ON u.tg_id = gm.tg_id
          WHERE gm.left_at IS NULL
          ORDER BY u.tg_id, gm.joined_at
@@ -574,7 +611,7 @@ async def export_diary(
                    (gm.joined_at AT TIME ZONE 'Europe/Moscow')::date    AS joined_day,
                    (u.onboarded_at AT TIME ZONE 'Europe/Moscow')::date  AS onboarded_day
               FROM group_members gm
-              JOIN chats c ON c.chat_id = gm.chat_id AND c.is_active
+              JOIN chats c ON c.chat_id = gm.chat_id AND c.is_active AND c.approved_at IS NOT NULL
               JOIN users u ON u.tg_id = gm.tg_id
              WHERE gm.left_at IS NULL
                AND u.onboarded_at IS NOT NULL

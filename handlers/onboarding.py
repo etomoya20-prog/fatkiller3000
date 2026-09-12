@@ -91,8 +91,10 @@ async def start_with_payload(message: Message, command: CommandObject, state: FS
         except ValueError:
             log.warning("Не разобрал chat_id из диплинка: %r", payload)
         else:
-            await db.upsert_chat(chat_id, None)
-            await db.add_group_member(chat_id, message.from_user.id)
+            # Диплинк можно собрать руками с любым ID, поэтому привязываем только
+            # к группе, которую одобрил владелец.
+            if await db.is_chat_approved(chat_id):
+                await db.add_group_member(chat_id, message.from_user.id)
     await start(message, state)
 
 

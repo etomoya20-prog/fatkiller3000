@@ -28,6 +28,22 @@ CREATE TABLE IF NOT EXISTS chats (
     added_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Когда владелец бота разрешил работу в группе. Пока NULL, бот в чате молчит,
+-- никого не учитывает и никому из этой группы не пишет (см. handlers/approval.py).
+-- Группы, где бот работал до появления одобрения, пропускаем сразу — но только
+-- в момент добавления колонки: схема накатывается на каждом старте, и иначе
+-- перезапуск бота молча одобрял бы всё, что ждёт решения.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'chats' AND column_name = 'approved_at'
+    ) THEN
+        ALTER TABLE chats ADD COLUMN approved_at TIMESTAMPTZ;
+        UPDATE chats SET approved_at = now() WHERE is_active;
+    END IF;
+END $$;
+
 -- Кто в какой группе состоит: сводка строится только по участникам группы.
 -- Один человек может состоять сразу в нескольких группах — профиль и дневник
 -- у него при этом общие, различается только то, в чью сводку он попадает.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import Bot, F, Router
-from aiogram.enums import ChatMemberStatus, ChatType
+from aiogram.enums import ChatType
 from aiogram.filters import (
     IS_MEMBER,
     IS_NOT_MEMBER,
@@ -21,11 +21,16 @@ from aiogram.types import (
 from aiogram.utils.markdown import hlink
 
 import db
+from handlers.approval import is_approved_chat
 
 log = logging.getLogger(__name__)
 
 router = Router(name="group")
 router.message.filter(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+# Пока владелец не пустил бота в группу, там не здороваемся и никого не записываем.
+# Добавление самого бота и решение владельца живут в handlers/approval.py.
+router.message.filter(is_approved_chat)
+router.chat_member.filter(is_approved_chat)
 
 
 async def invite_keyboard(bot: Bot, chat_id: int) -> InlineKeyboardMarkup:
@@ -93,30 +98,6 @@ async def on_user_left(event: ChatMemberUpdated) -> None:
     if user.is_bot:
         return
     await db.remove_group_member(event.chat.id, user.id)
-
-
-@router.my_chat_member()
-async def on_bot_status_changed(event: ChatMemberUpdated, bot: Bot) -> None:
-    """Бота добавили в группу или выгнали."""
-    if event.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
-        return
-
-    status = event.new_chat_member.status
-    if status in {ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR}:
-        await db.upsert_chat(event.chat.id, event.chat.title)
-        note = ""
-        if status != ChatMemberStatus.ADMINISTRATOR:
-            note = (
-                "\n\n⚠️ Сделайте меня администратором — без этого Telegram не сообщает "
-                "мне о новых участниках, и я не смогу их встречать."
-            )
-        await bot.send_message(
-            event.chat.id,
-            "Я на месте. Буду встречать новичков, вести учёт калорий в личке "
-            "и раз в неделю публиковать здесь сводку." + note,
-        )
-    elif status in {ChatMemberStatus.LEFT, ChatMemberStatus.KICKED}:
-        await db.deactivate_chat(event.chat.id)
 
 
 @router.message(F.new_chat_members)
