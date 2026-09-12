@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandObject, CommandStart
@@ -19,8 +17,6 @@ from aiogram.types import (
 import calories
 import db
 from config import ACTIVITY_FACTORS
-
-log = logging.getLogger(__name__)
 
 router = Router(name="onboarding")
 router.message.filter(F.chat.type == ChatType.PRIVATE)
@@ -83,18 +79,8 @@ def format_profile(user: dict) -> str:
 
 @router.message(CommandStart(deep_link=True))
 async def start_with_payload(message: Message, command: CommandObject, state: FSMContext) -> None:
-    """Переход по кнопке из группы: запоминаем, из какого чата пришёл человек."""
-    payload = command.args or ""
-    if payload.startswith("group"):
-        try:
-            chat_id = int(payload.removeprefix("group"))
-        except ValueError:
-            log.warning("Не разобрал chat_id из диплинка: %r", payload)
-        else:
-            # Диплинк можно собрать руками с любым ID, поэтому привязываем только
-            # к группе, которую одобрил владелец.
-            if await db.is_chat_approved(chat_id):
-                await db.add_group_member(chat_id, message.from_user.id)
+    """Переход по кнопке из группы. К группе человека уже привязал
+    PrivateAccessMiddleware (handlers/access.py) — ему это нужно раньше нас."""
     await start(message, state)
 
 

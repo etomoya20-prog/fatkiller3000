@@ -19,6 +19,7 @@ import scheduler as scheduler_module
 import sheets
 from config import Config, load_config
 from handlers import approval, group, intake, onboarding, weighin
+from handlers.access import PrivateAccessMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
@@ -124,6 +125,11 @@ async def main() -> None:
     dispatcher = Dispatcher()
     # cfg приезжает в хендлеры аргументом — так админские команды видят конфиг.
     dispatcher["cfg"] = cfg
+
+    # Личка открыта только участникам одобренных групп; владелец и админы — всегда.
+    access = PrivateAccessMiddleware(ADMIN_IDS | ({cfg.owner_id} if cfg.owner_id else set()))
+    dispatcher.message.outer_middleware(access)
+    dispatcher.callback_query.outer_middleware(access)
 
     # Порядок важен: intake ловит любой текст, поэтому идёт последним.
     # weighin стоит перед ним — он забирает ответ на вопрос о весе, а всё
