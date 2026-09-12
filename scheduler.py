@@ -193,8 +193,13 @@ def build_summary(rows, start: dt.date, end: dt.date, total_days: int) -> str:
 
 
 async def send_weekly_summary(bot: Bot, cfg: Config) -> None:
-    """Публикует сводку за последние 7 дней во все известные группы."""
-    end = dt.datetime.now(MSK).date()
+    """Публикует сводку за 7 дней по вчерашний включительно во все известные группы.
+
+    Сегодняшний день не берём: отчёты идут весь вечер, в основном после
+    напоминания в 21:00, и незакрытый день выглядел бы прогулом почти у всех.
+    Поэтому сводка выходит утром в понедельник за неделю пн–вс.
+    """
+    end = dt.datetime.now(MSK).date() - dt.timedelta(days=1)
     start = end - dt.timedelta(days=6)
     total_days = 7
 
